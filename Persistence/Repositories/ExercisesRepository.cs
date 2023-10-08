@@ -18,10 +18,23 @@ public class ExercisesRepository
     }
     public void UpdateExercise(Exercise exercise)
     {
-        var existingExercise = GetExercise(exercise.Id);
-        var updatedExercise = existingExercise.Adapt<Exercise>();
-
-        _context.Exercises.Update(updatedExercise);
+        var existingEntity = GetExercise(exercise.Id);
+        if (exercise.Series is not null)
+        {
+            existingEntity.Series = exercise.Series;
+        }
+        if (exercise.Repetitions is not null)
+        {
+            existingEntity.Repetitions = exercise.Repetitions;
+        }
+        if (exercise.Weight is not null)
+        {
+            existingEntity.Weight = exercise.Weight;
+        }
+        if (exercise.TypeId is not null)
+        {
+            existingEntity.TypeId = exercise.TypeId;
+        }
         _context.SaveChanges();
     }
 }

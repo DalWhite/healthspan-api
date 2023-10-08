@@ -18,7 +18,24 @@ public class UsersRepository
     }
     public void UpdateUser(User user)
     {
-        _context.Users.Update(user);
+        var existingEntity = GetUser(user.Id);
+
+        if (user.Name is not null)
+        {
+            existingEntity.Name = user.Name;
+        }
+        if (user.Age is not null)
+        {
+            existingEntity.Age = user.Age;
+        }
+        if (user.Weight is not null)
+        {
+            existingEntity.Weight = user.Weight;
+        }
+        if (user.Height is not null)
+        {
+            existingEntity.Height = user.Height;
+        }
         _context.SaveChanges();
     }
 }
