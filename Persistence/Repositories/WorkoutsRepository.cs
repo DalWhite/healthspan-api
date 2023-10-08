@@ -18,10 +18,11 @@ public class WorkoutsRepository
     }
     public void UpdateWorkout(Workout workout)
     {
-        var existingWorkout = GetWorkout(workout.Id);
-        var updatedWorkout = existingWorkout.Adapt<Workout>();
-
-        _context.Workouts.Update(existingWorkout);
+        var existingEntity = GetWorkout(workout.Id);
+        if (workout.Date is not null)
+        {
+            existingEntity.Date = workout.Date;
+        }
         _context.SaveChanges();
     }
 }
