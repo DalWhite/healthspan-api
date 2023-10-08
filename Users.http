@@ -1,0 +1,106 @@
+@healthspan_api_HostAddress = http://localhost:5152
+
+# POST /Users
+POST {{healthspan_api_HostAddress}}/Users
+Content-Type: application/json
+
+{
+  "name": "REST User",
+  "age": 30,
+  "weight": 70,
+  "height": 175
+}
+
+# PUT /Users
+PUT {{healthspan_api_HostAddress}}/Users
+Content-Type: application/json
+
+{
+  "name": "Updated User Name",
+  "age": 35,
+  "weight": 75,
+  "height": 180
+}
+
+# GET /Users/{id}
+GET {{healthspan_api_HostAddress}}/Users/user-id
+###
+# POST /Exercises
+POST {{healthspan_api_HostAddress}}/Exercises
+Content-Type: application/json
+
+{
+  "type": {
+    "id": "exercise-type-id",
+    "name": "Exercise Name",
+    "description": "Exercise Description",
+    "muscleGroup": "Muscle Group"
+  },
+  "series": 3,
+  "repetitions": 12,
+  "weight": 50
+}
+
+# PUT /Exercises
+PUT {{healthspan_api_HostAddress}}/Exercises
+Content-Type: application/json
+
+{
+  "type": {
+    "id": "exercise-type-id",
+    "name": "Updated Exercise Name",
+    "description": "Updated Exercise Description",
+    "muscleGroup": "Updated Muscle Group"
+  },
+  "series": 4,
+  "repetitions": 15,
+  "weight": 60
+}
+
+# GET /Exercises/{id}
+GET {{healthspan_api_HostAddress}}/Exercises/exercise-id
+
+# POST /ExerciseTypes
+POST {{healthspan_api_HostAddress}}/ExerciseTypes
+Content-Type: application/json
+
+{
+  "name": "Exercise Type Name",
+  "description": "Exercise Type Description",
+  "muscleGroup": "Exercise Type Muscle Group"
+}
+
+# PUT /ExerciseTypes
+PUT {{healthspan_api_HostAddress}}/ExerciseTypes
+Content-Type: application/json
+
+{
+  "name": "Updated Exercise Type Name",
+  "description": "Updated Exercise Type Description",
+  "muscleGroup": "Updated Exercise Type Muscle Group"
+}
+
+# GET /ExerciseTypes/{id}
+GET {{healthspan_api_HostAddress}}/ExerciseTypes/exercise-type-id
+
+
+# POST /Workouts
+POST {{healthspan_api_HostAddress}}/Workouts
+Content-Type: application/json
+
+{
+  "date": "2023-10-08T10:00:00Z",
+  "userId": 1
+}
+
+# PUT /Workouts
+PUT {{healthspan_api_HostAddress}}/Workouts
+Content-Type: application/json
+
+{
+  "date": "2023-10-08T11:00:00Z",
+  "userId": 2
+}
+
+# GET /Workouts/{id}
+GET {{healthspan_api_HostAddress}}/Workouts/workout-id
