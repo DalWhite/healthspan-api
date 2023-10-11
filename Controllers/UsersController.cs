@@ -28,7 +28,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetUserResource> GetUser(Guid id)
+    public ActionResult<GetUserResource> GetUser(int id)
     {
         try
         {
