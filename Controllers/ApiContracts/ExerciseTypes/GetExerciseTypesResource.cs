@@ -1,4 +1,4 @@
 public class GetExerciseTypeResource : BaseExerciseTypeResource
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 }

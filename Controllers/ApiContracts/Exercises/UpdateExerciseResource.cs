@@ -1,4 +1,4 @@
 public class UpdateExerciseResource : BaseExerciseResource
 {
-    public Guid Id { get; set; }
+    public int Id { get; set; }
 }

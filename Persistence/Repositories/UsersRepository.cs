@@ -12,7 +12,7 @@ public class UsersRepository
         _context.Users.Add(user);
         _context.SaveChanges();   
     }
-    public User GetUser(Guid Id)
+    public User GetUser(int Id)
     {
         return _context.Users.Find(Id);
     }

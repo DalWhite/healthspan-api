@@ -12,7 +12,7 @@ public class ExercisesRepository
         _context.Exercises.Add(exercise);
         _context.SaveChanges();   
     }
-    public Exercise GetExercise(Guid Id)
+    public Exercise GetExercise(int Id)
     {
         return _context.Exercises.Find(Id);
     }

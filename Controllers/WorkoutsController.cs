@@ -28,7 +28,7 @@ public class WorkoutsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetWorkoutResource> GetWorkout(Guid id)
+    public ActionResult<GetWorkoutResource> GetWorkout(int id)
     {
         try
         {

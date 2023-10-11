@@ -8,8 +8,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
 
-builder.Services.AddDbContext<MainDbContext>(
-       options => options.UseSqlServer("Server=localhost;Database=HealthspanDb;Trusted_Connection=False;User ID=sa;Password=Passw0rd;TrustServerCertificate=true"));
 
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
@@ -30,4 +28,12 @@ app.UseHttpsRedirection();
 
 
 app.Run();
+
+//elephantsql
+//felece8350@htoal.com
+//Z$eTeAVhgdnM-7z
+
+//scalingo
+//joxip21594@mugadget.com
+//a*SHVYw@dhF.37a
 
