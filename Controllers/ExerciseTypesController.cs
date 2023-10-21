@@ -12,6 +12,20 @@ public class ExerciseTypesController : ControllerBase
         _exerciseTypeRepository = exerciseTypeRepository;
     }
 
+    [HttpGet]
+    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes()
+    {
+        try
+        {
+            var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
+            var response = domainExerciseTypes.Adapt<List<GetExerciseTypeResource>>();
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
     [HttpPost]
     public IActionResult AddExerciseType(AddExerciseTypeResource exerciseTypeResource)
     {
@@ -28,7 +42,7 @@ public class ExerciseTypesController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseType(int id)
+    public ActionResult<GetExerciseTypeResource> GetExerciseType(Guid id)
     {
         try
         {

@@ -1,3 +1,4 @@
-public class AddWorkoutResource: BaseWorkoutResource
+public class AddWorkoutResource : BaseWorkoutResource
 {
+    public string Type { get; set; }
 }

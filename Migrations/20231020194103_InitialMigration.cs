@@ -1,6 +1,5 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -12,45 +11,48 @@ namespace healthspan_api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AlterDatabase()
+                .Annotation("MySQL:Charset", "utf8mb4");
+
             migrationBuilder.CreateTable(
                 name: "ExerciseTypes",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Name = table.Column<string>(type: "text", nullable: true),
-                    Description = table.Column<string>(type: "text", nullable: true),
-                    MuscleGroup = table.Column<string>(type: "text", nullable: true)
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Name = table.Column<string>(type: "longtext", nullable: true),
+                    Description = table.Column<string>(type: "longtext", nullable: true),
+                    MuscleGroup = table.Column<string>(type: "longtext", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ExerciseTypes", x => x.Id);
-                });
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Name = table.Column<string>(type: "text", nullable: true),
-                    Age = table.Column<int>(type: "integer", nullable: true),
-                    Weight = table.Column<int>(type: "integer", nullable: true),
-                    Height = table.Column<int>(type: "integer", nullable: true)
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Name = table.Column<string>(type: "longtext", nullable: true),
+                    Age = table.Column<int>(type: "int", nullable: true),
+                    Weight = table.Column<int>(type: "int", nullable: true),
+                    Height = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
-                });
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateTable(
                 name: "Workouts",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Date = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    UserId = table.Column<int>(type: "integer", nullable: false)
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Date = table.Column<DateTime>(type: "datetime(6)", nullable: true),
+                    Type = table.Column<string>(type: "longtext", nullable: true),
+                    UserId = table.Column<Guid>(type: "char(36)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -59,21 +61,21 @@ namespace healthspan_api.Migrations
                         name: "FK_Workouts_Users_UserId",
                         column: x => x.UserId,
                         principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+                        principalColumn: "Id");
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateTable(
                 name: "Exercises",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    TypeId = table.Column<int>(type: "integer", nullable: true),
-                    Series = table.Column<int>(type: "integer", nullable: true),
-                    Repetitions = table.Column<int>(type: "integer", nullable: true),
-                    Weight = table.Column<int>(type: "integer", nullable: true),
-                    WorkoutId = table.Column<int>(type: "integer", nullable: true)
+                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    TypeId = table.Column<Guid>(type: "char(36)", nullable: true),
+                    Series = table.Column<int>(type: "int", nullable: true),
+                    Repetitions = table.Column<int>(type: "int", nullable: true),
+                    Weight = table.Column<int>(type: "int", nullable: true),
+                    WorkoutId = table.Column<int>(type: "int", nullable: true),
+                    WorkoutId1 = table.Column<Guid>(type: "char(36)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -84,11 +86,12 @@ namespace healthspan_api.Migrations
                         principalTable: "ExerciseTypes",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_Exercises_Workouts_WorkoutId",
-                        column: x => x.WorkoutId,
+                        name: "FK_Exercises_Workouts_WorkoutId1",
+                        column: x => x.WorkoutId1,
                         principalTable: "Workouts",
                         principalColumn: "Id");
-                });
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Exercises_TypeId",
@@ -96,9 +99,9 @@ namespace healthspan_api.Migrations
                 column: "TypeId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Exercises_WorkoutId",
+                name: "IX_Exercises_WorkoutId1",
                 table: "Exercises",
-                column: "WorkoutId");
+                column: "WorkoutId1");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Workouts_UserId",

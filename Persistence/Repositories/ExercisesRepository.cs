@@ -12,9 +12,13 @@ public class ExercisesRepository
         _context.Exercises.Add(exercise);
         _context.SaveChanges();   
     }
-    public Exercise GetExercise(int Id)
+    public Exercise GetExercise(Guid Id)
     {
         return _context.Exercises.Find(Id);
+    }
+    public List<Exercise> GetExercises()
+    {
+        return _context.Exercises.ToList();
     }
     public void UpdateExercise(Exercise exercise)
     {
@@ -31,9 +35,9 @@ public class ExercisesRepository
         {
             existingEntity.Weight = exercise.Weight;
         }
-        if (exercise.TypeId is not null)
+        if (exercise.Type is not null)
         {
-            existingEntity.TypeId = exercise.TypeId;
+            existingEntity.Type = exercise.Type;
         }
         _context.SaveChanges();
     }
