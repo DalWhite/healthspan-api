@@ -3,8 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 public class Exercise
 {
-    public int Id { get; set; }
-    public int? TypeId { get; set; }
+    public Guid Id { get; set; }
     public ExerciseType? Type { get; set; }
     public int? Series {get;set;}
     public int? Repetitions {get;set;}

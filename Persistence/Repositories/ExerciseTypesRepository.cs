@@ -12,9 +12,13 @@ public class ExerciseTypesRepository
         _context.ExerciseTypes.Add(exerciseType);
         _context.SaveChanges();   
     }
-    public ExerciseType GetExerciseType(int Id)
+    public ExerciseType GetExerciseType(Guid Id)
     {
         return _context.ExerciseTypes.Find(Id);
+    }
+    public List<ExerciseType> GetExerciseTypes()
+    {
+        return _context.ExerciseTypes.ToList();
     }
     public void UpdateExerciseType(ExerciseType exerciseType)
     {

@@ -8,6 +8,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
 
+builder.Services.AddDbContext<MainDbContext>(
+       options => options.UseMySQL("Server=localhost;Database=HealthspanDb;User ID=root;Password=Passw0rd;"));
 
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
