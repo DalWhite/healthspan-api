@@ -2,7 +2,8 @@
 
 ````
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Passw0rd" -p 1433:1433 --name sqlserver -d mcr.microsoft.com/mssql/server:latest 
+docker run -e "MYSQL_ROOT_PASSWORD=Passw0rd" -p 3306:3306 --name mysql -d mysql:latest
 ````
 
 TODOS:
-- [ ] Solve creation of migrations with diferent providers (depending on the env also). Being able to switch provider quickly
+- [ ] Return json with id on posts and puts
