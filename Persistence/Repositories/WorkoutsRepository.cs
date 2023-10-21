@@ -12,9 +12,13 @@ public class WorkoutsRepository
         _context.Workouts.Add(workout);
         _context.SaveChanges();   
     }
-    public Workout GetWorkout(int Id)
+    public Workout GetWorkout(Guid Id)
     {
         return _context.Workouts.Find(Id);
+    }
+    public List<Workout> GetWorkouts()
+    {
+        return _context.Workouts.ToList();
     }
     public void UpdateWorkout(Workout workout)
     {

@@ -11,6 +11,20 @@ public class WorkoutsController : ControllerBase
     {
         _workoutsRepository = workoutRepository;
     }
+    [HttpGet]
+    public ActionResult<List<GetWorkoutResource>> GetWorkouts()
+    {
+        try
+        {
+            var domainWorkouts = _workoutsRepository.GetWorkouts();
+            var response = domainWorkouts.Adapt<List<GetWorkoutResource>>();
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
 
     [HttpPost]
     public IActionResult AddWorkout(AddWorkoutResource workoutResource)
@@ -28,7 +42,7 @@ public class WorkoutsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetWorkoutResource> GetWorkout(int id)
+    public ActionResult<GetWorkoutResource> GetWorkout(Guid id)
     {
         try
         {
