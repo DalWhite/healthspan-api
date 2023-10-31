@@ -36,17 +36,14 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("Weight")
                         .HasColumnType("int");
 
-                    b.Property<int?>("WorkoutId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid?>("WorkoutId1")
+                    b.Property<Guid?>("WorkoutId")
                         .HasColumnType("char(36)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("TypeId");
 
-                    b.HasIndex("WorkoutId1");
+                    b.HasIndex("WorkoutId");
 
                     b.ToTable("Exercises");
                 });
@@ -124,7 +121,7 @@ namespace healthspan_api.Migrations
 
                     b.HasOne("Workout", "Workout")
                         .WithMany("Exercises")
-                        .HasForeignKey("WorkoutId1");
+                        .HasForeignKey("WorkoutId");
 
                     b.Navigation("Type");
 

@@ -6,10 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 public class ExercisesController : ControllerBase
 {
     private readonly ExercisesRepository _exerciseRepository;
+    private readonly WorkoutsRepository _workoutsRepository;
+    private readonly ExerciseTypesRepository _exerciseTypesRepository;
 
-    public ExercisesController(ExercisesRepository exerciseRepository)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository)
     {
         _exerciseRepository = exerciseRepository;
+        _workoutsRepository = workoutsRepository;
+        _exerciseTypesRepository = exerciseTypesRepository;
     }
 
     [HttpGet]
@@ -31,9 +35,13 @@ public class ExercisesController : ControllerBase
     {
         try
         {
+            var workout = _workoutsRepository.GetWorkout(exerciseResource.WorkoutId);
+            var exerciseType = _exerciseTypesRepository.GetExerciseType(exerciseResource.TypeId);
             var domainExercise = exerciseResource.Adapt<Exercise>();
+            domainExercise.Type = exerciseType;
+            domainExercise.Workout = workout;
             _exerciseRepository.AddExercise(domainExercise);
-            return Ok("Exercise added successfully");
+            return Created();
         }
         catch (Exception ex)
         {

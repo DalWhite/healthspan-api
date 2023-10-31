@@ -32,8 +32,8 @@ public class WorkoutsController : ControllerBase
         try
         {
             var domainWorkout = workoutResource.Adapt<Workout>();
-            _workoutsRepository.AddWorkout(domainWorkout);
-            return Ok("Workout added successfully");
+            var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
+            return CreatedAtAction(nameof(GetWorkouts), domainWorkout);
         }
         catch (Exception ex)
         {
