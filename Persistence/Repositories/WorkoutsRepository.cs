@@ -1,5 +1,3 @@
-using Mapster;
-
 public class WorkoutsRepository
 {
     private readonly MainDbContext _context;
@@ -7,10 +5,11 @@ public class WorkoutsRepository
     {
         _context = context;
     }
-    public void AddWorkout(Workout workout)
+    public Guid AddWorkout(Workout workout)
     {
         _context.Workouts.Add(workout);
-        _context.SaveChanges();   
+        _context.SaveChanges();
+        return workout.Id;
     }
     public Workout GetWorkout(Guid Id)
     {
