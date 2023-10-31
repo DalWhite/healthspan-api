@@ -1,4 +1,5 @@
 using Mapster;
+using Microsoft.EntityFrameworkCore;
 
 public class ExercisesRepository
 {
@@ -18,7 +19,10 @@ public class ExercisesRepository
     }
     public List<Exercise> GetExercises()
     {
-        return _context.Exercises.ToList();
+        return _context.Exercises
+            .Include(e => e.Type)
+            .Include(e => e.Workout)
+            .ToList();
     }
     public void UpdateExercise(Exercise exercise)
     {

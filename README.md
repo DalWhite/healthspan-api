@@ -7,3 +7,4 @@ docker run -e "MYSQL_ROOT_PASSWORD=Passw0rd" -p 3306:3306 --name mysql -d mysql:
 
 TODOS:
 - [ ] Return json with id on posts and puts
+- [ ] Allow to add workout relation on post exercises
