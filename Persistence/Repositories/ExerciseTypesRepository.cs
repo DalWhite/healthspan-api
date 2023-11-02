@@ -7,10 +7,11 @@ public class ExerciseTypesRepository
     {
         _context = context;
     }
-    public void AddExerciseType(ExerciseType exerciseType)
+    public Guid AddExerciseType(ExerciseType exerciseType)
     {
         _context.ExerciseTypes.Add(exerciseType);
         _context.SaveChanges();   
+        return exerciseType.Id;
     }
     public ExerciseType GetExerciseType(Guid Id)
     {

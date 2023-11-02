@@ -35,13 +35,11 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var workout = _workoutsRepository.GetWorkout(exerciseResource.WorkoutId);
-            var exerciseType = _exerciseTypesRepository.GetExerciseType(exerciseResource.TypeId);
             var domainExercise = exerciseResource.Adapt<Exercise>();
-            domainExercise.Type = exerciseType;
-            domainExercise.Workout = workout;
-            _exerciseRepository.AddExercise(domainExercise);
-            return Created();
+            domainExercise.TypeId = exerciseResource.TypeId;
+            domainExercise.WorkoutId = exerciseResource.WorkoutId;
+            var exerciseId = _exerciseRepository.AddExercise(domainExercise);
+            return CreatedAtAction(nameof(GetExercise), new{id = exerciseId}, domainExercise);
         }
         catch (Exception ex)
         {
