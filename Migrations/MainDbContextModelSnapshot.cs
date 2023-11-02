@@ -24,6 +24,12 @@ namespace healthspan_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<int?>("Intensity")
+                        .HasColumnType("int");
+
+                    b.Property<double?>("MaxRepetition")
+                        .HasColumnType("double");
+
                     b.Property<int?>("Repetitions")
                         .HasColumnType("int");
 
@@ -33,8 +39,11 @@ namespace healthspan_api.Migrations
                     b.Property<Guid?>("TypeId")
                         .HasColumnType("char(36)");
 
-                    b.Property<int?>("Weight")
+                    b.Property<int?>("Volume")
                         .HasColumnType("int");
+
+                    b.Property<double?>("Weight")
+                        .HasColumnType("double");
 
                     b.Property<Guid?>("WorkoutId")
                         .HasColumnType("char(36)");

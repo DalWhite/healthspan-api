@@ -32,8 +32,8 @@ public class ExerciseTypesController : ControllerBase
         try
         {
             var domainExerciseType = exerciseTypeResource.Adapt<ExerciseType>();
-            _exerciseTypeRepository.AddExerciseType(domainExerciseType);
-            return Ok("ExerciseType added successfully");
+            var exerciseTypeId = _exerciseTypeRepository.AddExerciseType(domainExerciseType);
+            return CreatedAtAction(nameof(GetExerciseType), new { id = exerciseTypeId }, domainExerciseType);
         }
         catch (Exception ex)
         {

@@ -8,11 +8,17 @@ public class ExercisesRepository
     {
         _context = context;
     }
-    public void AddExercise(Exercise exercise)
+    public Guid AddExercise(Exercise exercise)
     {
+        CalculateComputedValues(exercise);
+
         _context.Exercises.Add(exercise);
-        _context.SaveChanges();   
+        _context.SaveChanges();
+
+        return exercise.Id;
     }
+
+
     public Exercise GetExercise(Guid Id)
     {
         return _context.Exercises.Find(Id);
@@ -43,6 +49,28 @@ public class ExercisesRepository
         {
             existingEntity.Type = exercise.Type;
         }
+        CalculateComputedValues(exercise);
         _context.SaveChanges();
+    }
+    private void CalculateComputedValues(Exercise exercise)
+    {
+        var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
+        exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
+        exercise.Volume = (int?)(exercise.Repetitions * exercise.Series * exercise.Weight);
+
+        double? historicMaxRepetition = exercise.MaxRepetition;
+        
+        var exercisesOfType = _context.Exercises
+            .Where(e=> e.Type.Id == exercise.TypeId);
+        
+        if (exercisesOfType.Any())
+        {
+            historicMaxRepetition = exercisesOfType
+                .OrderByDescending(e => e.MaxRepetition)
+                .Select(e => e.MaxRepetition)
+                .First();
+        }
+            
+        exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
     }
 }

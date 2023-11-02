@@ -1,0 +1,35 @@
+@healthspan_api_HostAddress = http://localhost:5152
+# POST /Workouts
+# @name CreateWorkoutRequest
+POST {{healthspan_api_HostAddress}}/Workouts
+Content-Type: application/json
+
+{
+  "date": "2023-10-08T10:00:00Z",
+  "type": "restclient-workouttype"
+}
+###
+
+# POST /ExerciseTypes
+# @name CreateExerciseTypeRequest
+POST {{healthspan_api_HostAddress}}/ExerciseTypes
+Content-Type: application/json
+
+{
+  "name": "restclient-extype",
+  "description": "test",
+  "muscleGroup": "Arms"
+}
+###
+# POST /Exercises
+POST {{healthspan_api_HostAddress}}/Exercises
+Content-Type: application/json
+
+{
+  "series": 5,
+  "repetitions": 8,
+  "weight": 80,
+  "typeId": "{{CreateExerciseTypeRequest.response.body.id}}",
+  "workoutId": "{{CreateWorkoutRequest.response.body.id}}"
+}
+###

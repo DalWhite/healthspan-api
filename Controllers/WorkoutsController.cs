@@ -33,7 +33,7 @@ public class WorkoutsController : ControllerBase
         {
             var domainWorkout = workoutResource.Adapt<Workout>();
             var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
-            return CreatedAtAction(nameof(GetWorkouts), domainWorkout);
+            return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, domainWorkout);
         }
         catch (Exception ex)
         {
