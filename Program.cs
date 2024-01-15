@@ -2,14 +2,13 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
 
+var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
 builder.Services.AddDbContext<MainDbContext>(
-       options => options.UseMySQL("Server=localhost;Database=HealthspanDb;User ID=root;Password=Passw0rd;"));
+       options => options.UseMySQL(dbConnectionString));
 
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
@@ -35,12 +34,3 @@ app.UseCors(o =>
 
 
 app.Run();
-
-//elephantsql
-//felece8350@htoal.com
-//Z$eTeAVhgdnM-7z
-
-//scalingo
-//joxip21594@mugadget.com
-//a*SHVYw@dhF.37a
-
