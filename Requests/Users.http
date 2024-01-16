@@ -1,4 +1,5 @@
-@healthspan_api_HostAddress = http://localhost:5152
+#@healthspan_api_HostAddress = http://localhost:5152
+@healthspan_api_HostAddress = https://healthspan-api-dev.azurewebsites.net
 
 # POST /Workouts
 POST {{healthspan_api_HostAddress}}/Workouts
