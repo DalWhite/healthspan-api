@@ -34,7 +34,7 @@ builder.Services.AddCors(options =>
         options.AddPolicy(name: "MyAllowSpecificOrigins",
                           builder =>
                           {
-                              builder.WithOrigins("https://localhost:5001")
+                              builder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
                                      .AllowAnyMethod()
                                      .AllowAnyHeader();
                           });
