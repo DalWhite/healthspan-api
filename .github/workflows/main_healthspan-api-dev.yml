@@ -35,6 +35,14 @@ jobs:
         env:
           DbConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
 
+      - name: Execute EF Core Migrations
+        env:
+          ConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
+        run: |
+          dotnet tool install --global dotnet-ef
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef database update --project path/to/Your.Data.Project.csproj --connection $ConnectionString
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v3
         with:
