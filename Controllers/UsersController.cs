@@ -1,6 +1,8 @@
 using Mapster;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+[Authorize]
 [ApiController]
 [Route("[controller]")]
 public class UsersController : ControllerBase
@@ -28,7 +30,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetUserResource> GetUser(Guid id)
+    public ActionResult<GetUserResource> GetUser(string id)
     {
         try
         {
