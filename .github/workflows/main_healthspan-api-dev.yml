@@ -35,15 +35,6 @@ jobs:
         env:
           DbConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
 
-      - name: Execute EF Core Migrations
-        env:
-          ConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
-        run: |
-          dotnet tool install --global dotnet-ef
-          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
-          dotnet ef database update --project "healthspan-api.csproj" --connection $ConnectionString
-        shell: pwsh
-
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v3
         with:
