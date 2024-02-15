@@ -40,8 +40,9 @@ jobs:
           ConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
         run: |
           dotnet tool install --global dotnet-ef
-          export PATH="$PATH:$HOME/.dotnet/tools"
-          dotnet ef database update --project path/to/Your.Data.Project.csproj --connection $ConnectionString
+          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+          dotnet ef database update --connection $ConnectionString
+        shell: pwsh
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v3
