@@ -8,10 +8,12 @@ using Microsoft.AspNetCore.Mvc;
 public class WorkoutsController : ControllerBase
 {
     private readonly WorkoutsRepository _workoutsRepository;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public WorkoutsController(WorkoutsRepository workoutRepository)
+    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor)
     {
         _workoutsRepository = workoutRepository;
+        _httpContextAccessor = httpContextAccessor;
     }
     [HttpGet]
     public ActionResult<List<GetWorkoutResource>> GetWorkouts()

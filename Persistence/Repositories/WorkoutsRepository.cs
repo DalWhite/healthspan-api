@@ -1,12 +1,19 @@
+using Microsoft.AspNetCore.SignalR;
+using Services;
+
 public class WorkoutsRepository
 {
     private readonly MainDbContext _context;
-    public WorkoutsRepository(MainDbContext context)
+    private readonly UserProvider _userProvider;
+    public WorkoutsRepository(MainDbContext context, UserProvider userProvider)
     {
         _context = context;
+        _userProvider = userProvider;
     }
     public Guid AddWorkout(Workout workout)
     {
+        workout.UserId = _userProvider.GetUserId();
+
         _context.Workouts.Add(workout);
         _context.SaveChanges();
         return workout.Id;
