@@ -1,0 +1,37 @@
+# Set your base API address
+@healthspan_api_HostAddress = https://localhost:7278
+
+@authToken = CfDJ8MPR451yhNpAqF01weV-YH8F2rtaVUGVw-uonj_ahvOT1lp7v2hD9Ua1LCkYgJzvmZP6M67TMtPTp0AexHaYTcxSrFdAkg16tEw-GnLmoIe3_edkfgMX3RJtUCwgMl5akye00s2b0FUh2Oei4Mm6A6wpNMO4rtgSwAFd679FRkYIpeUYiyZHrVP065XU-P62Hos0OHoWiztwELsNcyHdGP_Yk4R2aN0T8ITpHDN2S25aa87dJMlBMy-zJ4Z_qSGj-YJ782i0r73n0XrW2oqflEQxvqcSQsCP3FffR8DfrJFZFNYPuP41EpO_XOtxZISkW_YW5SHzXMeNXrHy1lTdBuRaHRkTou5pD2sPllvWxcAbbG7328BcKBWxArb7XN45iip4-qCBTvfoj8Hd6mjoJ4GQdj7sAIT7ZwrNonTLLrihvtPikaeHZTcHc03tQAdV6f_9iGPSPtPDVNRxU-shshQQRrnuILUQCVxaZz9ZB02Nq-GXAZKU86DBiEDtDV0cK3gLKKxMa0IFrk2FVfIKAGfmUuE9WrrflG-iVBfvzTGourje2ytOLC9AcfPOOLBAkssMgTZ0AbnN-y8lUeLDW1Hx6fiYfLWLxZqUse7DfHY54kXHeYCuvlRmh5g-yA0utaHQOhBjnMM7sNeMnN7qrj6q1aJDESJ2REMcjz25yyZIfcEqsLtLPQCfnf9CQnQRRw
+
+### GET /ExerciseTypes
+GET {{healthspan_api_HostAddress}}/ExerciseTypes
+Authorization: Bearer {{authToken}}
+
+
+### POST /ExerciseTypes
+# @name postExerciseType
+POST {{healthspan_api_HostAddress}}/ExerciseTypes
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "TestExerciseType",
+  "description": "Detailed description of the new exercise type."
+}
+
+
+### PUT /ExerciseTypes
+@id_to_update = {{postExerciseType.response.body.id}}
+PUT {{healthspan_api_HostAddress}}/ExerciseTypes
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "id": "{{id_to_update}}", 
+  "name": "Updated Exercise Type",
+  "description": "Updated description of the exercise type."
+}
+
+### GET /ExerciseTypes/{id}
+GET {{healthspan_api_HostAddress}}/ExerciseTypes/{{id_to_update}}
+Authorization: Bearer {{authToken}}

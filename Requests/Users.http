@@ -1,23 +1,20 @@
-#@healthspan_api_HostAddress = http://localhost:5152
-@healthspan_api_HostAddress = https://healthspan-api-dev.azurewebsites.net
+# Set your base API address
+@healthspan_api_HostAddress = https://localhost:7278
 
-# POST /Workouts
-POST {{healthspan_api_HostAddress}}/Workouts
+### POST /Register
+POST {{healthspan_api_HostAddress}}/Register
 Content-Type: application/json
 
 {
-  "date": "2023-10-08T10:00:00Z",
-  "userId": 1
+  "email": "test@gmail.com",
+  "password": "Pa$$w0rd"
 }
 
-# PUT /Workouts
-PUT {{healthspan_api_HostAddress}}/Workouts
+### POST /Login
+POST {{healthspan_api_HostAddress}}/Login
 Content-Type: application/json
 
 {
-  "date": "2023-10-08T11:00:00Z",
-  "userId": 2
+  "email": "test@gmail.com",
+  "password": "Pa$$w0rd"
 }
-
-# GET /Workouts/{id}
-GET {{healthspan_api_HostAddress}}/Workouts/workout-id

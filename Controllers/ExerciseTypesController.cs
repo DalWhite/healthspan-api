@@ -44,7 +44,7 @@ public class ExerciseTypesController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseType(Guid id)
+    public ActionResult<GetExerciseTypeResource> GetExerciseType(int id)
     {
         try
         {
