@@ -7,7 +7,7 @@ public class Exercise
     public double? MaxRepetition {get;set;}
     public int? Volume {get;set;}
     public int? Intensity { get; set; }
-    public Guid? TypeId { get; set; }
+    public int? TypeId { get; set; }
     public ExerciseType Type { get; set; }
     public Guid? WorkoutId { get; set; }
     public Workout Workout { get; set; }
