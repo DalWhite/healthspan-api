@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace healthspan_api.Migrations
 {
     [DbContext(typeof(MainDbContext))]
-    [Migration("20240123153427_MinimalDomainPlusIdentity")]
-    partial class MinimalDomainPlusIdentity
+    [Migration("20240217101959_InitialMigration")]
+    partial class InitialMigration
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -39,8 +39,8 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("Series")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("TypeId")
-                        .HasColumnType("char(36)");
+                    b.Property<int?>("TypeId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("Volume")
                         .HasColumnType("int");
@@ -62,20 +62,30 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("ExerciseType", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("int");
 
                     b.Property<string>("Description")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("MuscleGroup")
+                    b.Property<string>("ImageRoute")
                         .HasColumnType("longtext");
 
                     b.Property<string>("Name")
                         .HasColumnType("longtext");
 
+                    b.Property<int?>("PrimaryMuscleId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SecondaryMuscleId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("PrimaryMuscleId");
+
+                    b.HasIndex("SecondaryMuscleId");
 
                     b.ToTable("ExerciseTypes");
                 });
@@ -208,6 +218,28 @@ namespace healthspan_api.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Muscle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<string>("MuscleGroup")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Muscle");
+                });
+
             modelBuilder.Entity("User", b =>
                 {
                     b.Property<string>("Id")
@@ -319,6 +351,21 @@ namespace healthspan_api.Migrations
                     b.Navigation("Type");
 
                     b.Navigation("Workout");
+                });
+
+            modelBuilder.Entity("ExerciseType", b =>
+                {
+                    b.HasOne("Muscle", "PrimaryMuscle")
+                        .WithMany()
+                        .HasForeignKey("PrimaryMuscleId");
+
+                    b.HasOne("Muscle", "SecondaryMuscle")
+                        .WithMany()
+                        .HasForeignKey("SecondaryMuscleId");
+
+                    b.Navigation("PrimaryMuscle");
+
+                    b.Navigation("SecondaryMuscle");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
