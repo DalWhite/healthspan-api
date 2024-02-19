@@ -7,7 +7,7 @@ using MySql.EntityFrameworkCore.Metadata;
 namespace healthspan_api.Migrations
 {
     /// <inheritdoc />
-    public partial class MinimalDomainPlusIdentity : Migration
+    public partial class InitialMigration : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -61,17 +61,18 @@ namespace healthspan_api.Migrations
                 .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateTable(
-                name: "ExerciseTypes",
+                name: "Muscle",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "char(36)", nullable: false),
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("MySQL:ValueGenerationStrategy", MySQLValueGenerationStrategy.IdentityColumn),
                     Name = table.Column<string>(type: "longtext", nullable: true),
-                    Description = table.Column<string>(type: "longtext", nullable: true),
-                    MuscleGroup = table.Column<string>(type: "longtext", nullable: true)
+                    Side = table.Column<string>(type: "longtext", nullable: false),
+                    MuscleGroup = table.Column<string>(type: "longtext", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ExerciseTypes", x => x.Id);
+                    table.PrimaryKey("PK_Muscle", x => x.Id);
                 })
                 .Annotation("MySQL:Charset", "utf8mb4");
 
@@ -207,6 +208,34 @@ namespace healthspan_api.Migrations
                 .Annotation("MySQL:Charset", "utf8mb4");
 
             migrationBuilder.CreateTable(
+                name: "ExerciseTypes",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("MySQL:ValueGenerationStrategy", MySQLValueGenerationStrategy.IdentityColumn),
+                    Name = table.Column<string>(type: "longtext", nullable: true),
+                    Description = table.Column<string>(type: "longtext", nullable: true),
+                    ImageRoute = table.Column<string>(type: "longtext", nullable: true),
+                    PrimaryMuscleId = table.Column<int>(type: "int", nullable: true),
+                    SecondaryMuscleId = table.Column<int>(type: "int", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ExerciseTypes", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ExerciseTypes_Muscle_PrimaryMuscleId",
+                        column: x => x.PrimaryMuscleId,
+                        principalTable: "Muscle",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_ExerciseTypes_Muscle_SecondaryMuscleId",
+                        column: x => x.SecondaryMuscleId,
+                        principalTable: "Muscle",
+                        principalColumn: "Id");
+                })
+                .Annotation("MySQL:Charset", "utf8mb4");
+
+            migrationBuilder.CreateTable(
                 name: "Exercises",
                 columns: table => new
                 {
@@ -217,7 +246,7 @@ namespace healthspan_api.Migrations
                     MaxRepetition = table.Column<double>(type: "double", nullable: true),
                     Volume = table.Column<int>(type: "int", nullable: true),
                     Intensity = table.Column<int>(type: "int", nullable: true),
-                    TypeId = table.Column<Guid>(type: "char(36)", nullable: true),
+                    TypeId = table.Column<int>(type: "int", nullable: true),
                     WorkoutId = table.Column<Guid>(type: "char(36)", nullable: true)
                 },
                 constraints: table =>
@@ -284,6 +313,16 @@ namespace healthspan_api.Migrations
                 column: "WorkoutId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ExerciseTypes_PrimaryMuscleId",
+                table: "ExerciseTypes",
+                column: "PrimaryMuscleId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ExerciseTypes_SecondaryMuscleId",
+                table: "ExerciseTypes",
+                column: "SecondaryMuscleId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Workouts_UserId",
                 table: "Workouts",
                 column: "UserId");
@@ -318,6 +357,9 @@ namespace healthspan_api.Migrations
 
             migrationBuilder.DropTable(
                 name: "Workouts");
+
+            migrationBuilder.DropTable(
+                name: "Muscle");
 
             migrationBuilder.DropTable(
                 name: "AspNetUsers");
