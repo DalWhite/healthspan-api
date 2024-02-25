@@ -30,6 +30,14 @@ public class ExercisesRepository
             .Include(e => e.Workout)
             .ToList();
     }
+    public List<Exercise> GetExercisesByType(int exerciseTypeId)
+    {
+        return _context.Exercises
+            .Where(e => e.TypeId == exerciseTypeId)
+            .Include(e => e.Type)
+            .Include(e => e.Workout)
+            .ToList();
+    }
     public void UpdateExercise(Exercise exercise)
     {
         var existingEntity = GetExercise(exercise.Id);

@@ -46,6 +46,7 @@ builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
+builder.Services.AddScoped<ExercisesService>();
 
 var app = builder.Build();
 

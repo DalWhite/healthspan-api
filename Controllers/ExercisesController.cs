@@ -10,21 +10,32 @@ public class ExercisesController : ControllerBase
     private readonly ExercisesRepository _exerciseRepository;
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
+    private readonly ExercisesService _exercisesService;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExercisesService exercisesService)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
+        _exercisesService = exercisesService;
     }
 
     [HttpGet]
-    public ActionResult<List<GetExerciseResource>> GetExercises()
+    public ActionResult<List<GetExerciseResource>> GetExercises(int? exerciseTypeId)
     {
         try
         {
-            var domainExercises = _exerciseRepository.GetExercises();
-            var response = domainExercises.Adapt<List<GetExerciseResource>>();
+            var exercises = new List<Exercise>();
+            if (exerciseTypeId.HasValue)
+            {   
+                exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value);
+            }
+            if(!exerciseTypeId.HasValue)
+            {
+                exercises = _exerciseRepository.GetExercises();
+            }
+            
+            var response = exercises.Adapt<List<GetExerciseResource>>();
             return Ok(response);
         }
         catch (Exception ex)
@@ -92,5 +103,55 @@ public class ExercisesController : ControllerBase
         {
             return BadRequest($"Error: {ex.Message}");
         }
+    }
+    
+    [HttpGet("{exerciseTypeId}/kpis")]
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId)
+    {
+        try
+        {
+            var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId);
+            if (exerciseTypeKpis is not null)
+            {
+                var response = exerciseTypeKpis;
+                return Ok(response);
+            }
+            else
+            {
+                return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
+            }
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
+    [HttpGet("{exerciseTypeId}/trends")]
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type)
+    {
+        try
+        {
+            var exerciseTypeTrends =  _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type);
+            if (exerciseTypeTrends is not null)
+            {
+                var response = exerciseTypeTrends;
+                return Ok(response);
+            }
+            else
+            {
+                return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
+            }
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
+
+    public enum TrendKpiType
+    {
+        RM,
+        Volume,
+        Intensity
     }
 }
