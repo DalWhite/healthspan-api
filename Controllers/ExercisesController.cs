@@ -35,7 +35,7 @@ public class ExercisesController : ControllerBase
                 exercises = _exerciseRepository.GetExercises();
             }
             
-            var response = exercises.Adapt<List<GetExerciseResource>>();
+            var response = exercises.Adapt<List<GetExerciseResource>>().OrderBy(e => e.Workout.Date);
             return Ok(response);
         }
         catch (Exception ex)

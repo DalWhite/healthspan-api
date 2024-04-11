@@ -47,6 +47,7 @@ builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<ExercisesService>();
+builder.Services.AddScoped<CsvService>();
 
 var app = builder.Build();
 

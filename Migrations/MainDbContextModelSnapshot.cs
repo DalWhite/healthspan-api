@@ -24,6 +24,9 @@ namespace healthspan_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("Comments")
+                        .HasColumnType("longtext");
+
                     b.Property<int?>("Intensity")
                         .HasColumnType("int");
 
