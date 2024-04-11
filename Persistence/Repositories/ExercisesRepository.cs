@@ -78,7 +78,13 @@ public class ExercisesRepository
                 .Select(e => e.MaxRepetition)
                 .First();
         }
-            
-        exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
+        if(exercise.Weight != 0)
+        {
+            exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
+        }
+        else
+        {
+            exercise.Intensity = 0;
+        }
     }
 }
