@@ -74,5 +74,5 @@ jobs:
         run: | 
           dotnet tool install --global dotnet-ef
           dotnet tool restore
-          dotnet ef database update --connection '${{ secrets.DBCONNECTIONSTRING }}'
+          dotnet ef database update -p healthspan-api --connection '${{ secrets.DBCONNECTIONSTRING }}'
           
