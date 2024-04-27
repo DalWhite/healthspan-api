@@ -70,4 +70,9 @@ jobs:
           app-name: 'healthspan-api-dev'
           slot-name: 'Production'
           package: .
+      - name: Run EF 
+        run: | 
+          dotnet tool install --global dotnet-ef
+          dotnet tool restore
+          dotnet ef database update -p DotNetCoreSqlDb --connection '${{ secrets.DBCONNECTIONSTRING }}'
           
