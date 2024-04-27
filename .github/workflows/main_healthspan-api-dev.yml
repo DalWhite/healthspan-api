@@ -46,7 +46,7 @@ jobs:
           dotnet tool install --global dotnet-ef
           dotnet tool restore
           ls
-          dotnet-ef database update --connection '${{ secrets.DBCONNECTIONSTRING }}'
+          dotnet-ef database update
 
   deploy:
     runs-on: windows-latest
