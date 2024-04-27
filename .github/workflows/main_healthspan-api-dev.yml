@@ -70,9 +70,12 @@ jobs:
           app-name: 'healthspan-api-dev'
           slot-name: 'Production'
           package: .
+      
+      - uses: actions/checkout@v4
       - name: Run EF 
         run: | 
           dotnet tool install --global dotnet-ef
           dotnet tool restore
+          ls
           dotnet-ef database update --connection '${{ secrets.DBCONNECTIONSTRING }}'
           
