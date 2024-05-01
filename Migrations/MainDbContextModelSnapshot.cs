@@ -90,6 +90,21 @@ namespace healthspan_api.Migrations
                     b.ToTable("ExerciseTypes");
                 });
 
+            modelBuilder.Entity("ExerciseTypeUser", b =>
+                {
+                    b.Property<int>("FavoriteExercisesId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FavoritedUsersId")
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("FavoriteExercisesId", "FavoritedUsersId");
+
+                    b.HasIndex("FavoritedUsersId");
+
+                    b.ToTable("ExerciseTypeUser");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -366,6 +381,21 @@ namespace healthspan_api.Migrations
                     b.Navigation("PrimaryMuscle");
 
                     b.Navigation("SecondaryMuscle");
+                });
+
+            modelBuilder.Entity("ExerciseTypeUser", b =>
+                {
+                    b.HasOne("ExerciseType", null)
+                        .WithMany()
+                        .HasForeignKey("FavoriteExercisesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("User", null)
+                        .WithMany()
+                        .HasForeignKey("FavoritedUsersId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
