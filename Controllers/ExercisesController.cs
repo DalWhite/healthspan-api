@@ -81,6 +81,36 @@ public class ExercisesController : ControllerBase
             return BadRequest($"Error: {ex.Message}");
         }
     }
+    [HttpDelete("{id}")]
+    public ActionResult<GetExerciseResource> DeleteExercise(Guid id)
+    {
+        try
+        {
+            _exerciseRepository.DeleteExercise(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
+    [HttpGet("{id}/metrics")]
+    public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id)
+    {
+        try
+        {
+
+            var domainExercise = _exerciseRepository.GetExercise(id);
+            _exerciseRepository.CalculateComputedValues(domainExercise);
+
+            var exerciseMetrics = domainExercise.Adapt<GetExerciseMetrics>();
+            return Ok(exerciseMetrics);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
 
     [HttpPut]
     public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource)

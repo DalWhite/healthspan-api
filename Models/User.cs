@@ -7,4 +7,5 @@ public class User : IdentityUser
     public int? Weight { get; set; }
     public int? Height { get; set; }
     public List<Workout> Workouts { get; set; }
+    public List<ExerciseType> FavoriteExercises { get; set; }
 }
