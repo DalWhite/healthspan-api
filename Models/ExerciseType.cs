@@ -8,4 +8,5 @@ public class ExerciseType
     public Muscle PrimaryMuscle { get; set; }
     public int? SecondaryMuscleId { get; set; }
     public Muscle SecondaryMuscle { get; set; }
+    public List<User> FavoritedUsers { get; set; }
 }

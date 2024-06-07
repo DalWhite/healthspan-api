@@ -17,11 +17,20 @@ public class ExercisesRepository
 
         return exercise.Id;
     }
+    public void DeleteExercise(Guid id)
+    {
+        var exerciseToDelete = _context.Exercises.FirstOrDefault(e => e.Id == id);
+        _context.Remove(exerciseToDelete);
+        _context.SaveChanges();
+    }
 
 
     public Exercise GetExercise(Guid Id)
     {
-        return _context.Exercises.Find(Id);
+        return _context.Exercises
+            .Include(e => e.Type)
+            .Include(e => e.Workout)
+            .FirstOrDefault(e => e.Id == Id);
     }
     public List<Exercise> GetExercises()
     {
@@ -57,10 +66,12 @@ public class ExercisesRepository
         {
             existingEntity.Type = exercise.Type;
         }
+        //FIX: this is wrong. Should try get a workout on that date. If there is one, swap workout. If not, create one.
+        existingEntity.Workout.Date = exercise.Workout.Date;
         CalculateComputedValues(exercise);
         _context.SaveChanges();
     }
-    private void CalculateComputedValues(Exercise exercise)
+    public void CalculateComputedValues(Exercise exercise)
     {
         var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
         exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
