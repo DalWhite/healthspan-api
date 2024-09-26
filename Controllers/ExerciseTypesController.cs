@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Services;
 
 [Authorize]
 [ApiController]
@@ -8,10 +9,14 @@ using Microsoft.AspNetCore.Mvc;
 public class ExerciseTypesController : ControllerBase
 {
     private readonly ExerciseTypesRepository _exerciseTypeRepository;
+    private readonly UserProvider _userProvider;
+    private readonly UsersRepository _usersRepository;
 
-    public ExerciseTypesController(ExerciseTypesRepository exerciseTypeRepository)
+    public ExerciseTypesController(ExerciseTypesRepository exerciseTypeRepository, UserProvider userProvider, UsersRepository usersRepository)
     {
         _exerciseTypeRepository = exerciseTypeRepository;
+        _userProvider = userProvider;
+        _usersRepository = usersRepository;
     }
 
     [HttpGet]
@@ -20,13 +25,32 @@ public class ExerciseTypesController : ControllerBase
         try
         {
             var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
-            var response = domainExerciseTypes.Adapt<List<GetExerciseTypeResource>>();
+            var response = new List<GetExerciseTypeResource>();
+
+            foreach (var exerciseType in domainExerciseTypes)
+            {
+                var mappedExType = exerciseType.Adapt<GetExerciseTypeResource>();
+                mappedExType.IsFavourite = IsFavouriteExType(exerciseType);
+                response.Add(mappedExType);
+            }
             return Ok(response);
         }
         catch (Exception ex)
         {
             return BadRequest($"Error: {ex.Message}");
         }
+    }
+    private bool IsFavouriteExType(ExerciseType exerciseType)
+    {
+        if(exerciseType.FavoritedUsers is null)
+        {
+            return false;
+        }
+        if(exerciseType.FavoritedUsers.Any(u => u.Id == _userProvider.GetUserId()))
+        {
+            return true;
+        }
+        return false;
     }
     [HttpPost]
     public IActionResult AddExerciseType(AddExerciseTypeResource exerciseTypeResource)
@@ -74,6 +98,21 @@ public class ExerciseTypesController : ControllerBase
             var existingExerciseType = _exerciseTypeRepository.GetExerciseType(domainExerciseType.Id);
             if (existingExerciseType is not null)
             {
+                if(exerciseTypeResource.IsFavourite)
+                {
+                    var userId = _userProvider.GetUserId();
+                    var user = _usersRepository.GetUser(userId);
+                    if(domainExerciseType.FavoritedUsers != null)
+                    {
+                        domainExerciseType.FavoritedUsers.Add(user);
+                    }
+                    else
+                    {
+                        domainExerciseType.FavoritedUsers = [
+                            user
+                        ];
+                    }
+                }
                 _exerciseTypeRepository.UpdateExerciseType(domainExerciseType);
                 return Ok("ExerciseType updated successfully");
             }
