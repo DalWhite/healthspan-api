@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 public class ExerciseTypesRepository
 {
     private readonly MainDbContext _context;
@@ -13,11 +15,11 @@ public class ExerciseTypesRepository
     }
     public ExerciseType GetExerciseType(int Id)
     {
-        return _context.ExerciseTypes.Find(Id);
+        return _context.ExerciseTypes.Include(et => et.FavoritedUsers).FirstOrDefault(et => et.Id == Id);
     }
     public List<ExerciseType> GetExerciseTypes()
     {
-        return _context.ExerciseTypes.ToList();
+        return _context.ExerciseTypes.Include(et => et.FavoritedUsers).ToList();
     }
     public void UpdateExerciseType(ExerciseType exerciseType)
     {
@@ -43,6 +45,7 @@ public class ExerciseTypesRepository
         {
             existingEntity.SecondaryMuscleId = exerciseType.SecondaryMuscleId;
         }
+        existingEntity.FavoritedUsers = exerciseType.FavoritedUsers;
 
         _context.SaveChanges();
     }
