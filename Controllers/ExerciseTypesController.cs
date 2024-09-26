@@ -20,7 +20,7 @@ public class ExerciseTypesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes()
+    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes(bool? favourite)
     {
         try
         {
@@ -32,6 +32,11 @@ public class ExerciseTypesController : ControllerBase
                 var mappedExType = exerciseType.Adapt<GetExerciseTypeResource>();
                 mappedExType.IsFavourite = IsFavouriteExType(exerciseType);
                 response.Add(mappedExType);
+            }
+
+            if(favourite is not null)
+            {
+                response = response.Where(r => r.IsFavourite == favourite).ToList();
             }
             return Ok(response);
         }
