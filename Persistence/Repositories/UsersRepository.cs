@@ -1,11 +1,14 @@
 using Mapster;
+using Services;
 
 public class UsersRepository
 {
     private readonly MainDbContext _context;
-    public UsersRepository(MainDbContext context)
+    private readonly UserProvider _userProvider;
+    public UsersRepository(MainDbContext context, UserProvider userProvider)
     {
         _context = context;
+        _userProvider = userProvider;
     }
     public void AddUser(User user)
     {
@@ -15,6 +18,12 @@ public class UsersRepository
     public User GetUser(string Id)
     {
         return _context.Users.Find(Id);
+    }
+    public List<User> GetTrainees()
+    {
+        var currentUserId = _userProvider.GetUserId();
+        return _context.Users.Where(u => u.Trainer.Id == currentUserId)
+            .ToList();
     }
     public void UpdateUser(User user)
     {

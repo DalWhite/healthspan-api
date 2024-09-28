@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Services;
 
 [Authorize]
 [ApiController]
@@ -8,10 +9,12 @@ using Microsoft.AspNetCore.Mvc;
 public class UsersController : ControllerBase
 {
     private readonly UsersRepository _userRepository;
+    private readonly UserProvider _userProvider;
 
-    public UsersController(UsersRepository userRepository)
+    public UsersController(UsersRepository userRepository, UserProvider userProvider)
     {
         _userRepository = userRepository;
+        _userProvider = userProvider;
     }
 
     [HttpPost]
@@ -61,6 +64,21 @@ public class UsersController : ControllerBase
             _userRepository.UpdateUser(domainUser);
             return Ok("User updated successfully");
 
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
+
+    [HttpGet("trainees")]
+    public ActionResult<GetUserResource> GetTrainees()
+    {
+        try
+        {
+            var domainUsers = _userRepository.GetTrainees();
+            var response = domainUsers.Adapt<List<GetUserResource>>();
+            return Ok(response);
         }
         catch (Exception ex)
         {
