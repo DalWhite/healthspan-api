@@ -21,7 +21,7 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<GetExerciseResource>> GetExercises(int? exerciseTypeId)
+    public ActionResult<List<GetExerciseResource>> GetExercises(int? exerciseTypeId, string userId)
     {
         try
         {
@@ -32,7 +32,7 @@ public class ExercisesController : ControllerBase
             }
             if(!exerciseTypeId.HasValue)
             {
-                exercises = _exerciseRepository.GetExercises();
+                exercises = _exerciseRepository.GetExercises(userId);
             }
             
             var response = exercises.Adapt<List<GetExerciseResource>>().OrderBy(e => e.Workout.Date);

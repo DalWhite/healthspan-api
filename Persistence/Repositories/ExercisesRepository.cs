@@ -1,12 +1,15 @@
 using Mapster;
 using Microsoft.EntityFrameworkCore;
+using Services;
 
 public class ExercisesRepository
 {
     private readonly MainDbContext _context;
-    public ExercisesRepository(MainDbContext context)
+    private UserProvider _userProvider;
+    public ExercisesRepository(MainDbContext context, UserProvider userProvider)
     {
         _context = context;
+        _userProvider = userProvider;
     }
     public Guid AddExercise(Exercise exercise)
     {
@@ -30,18 +33,29 @@ public class ExercisesRepository
         return _context.Exercises
             .Include(e => e.Type)
             .Include(e => e.Workout)
+            .IgnoreQueryFilters()
             .FirstOrDefault(e => e.Id == Id);
     }
-    public List<Exercise> GetExercises()
+    public List<Exercise> GetExercises(string userId)
     {
-        return _context.Exercises
+        var query = _context.Exercises
             .Include(e => e.Type)
             .Include(e => e.Workout)
-            .ToList();
+            .AsQueryable();
+
+        if(!string.IsNullOrEmpty(userId))
+        {
+            query = query
+                .IgnoreQueryFilters()
+                .Where(e => e.Workout.User.Id == userId);
+        }
+
+        return query.ToList();
     }
     public List<Exercise> GetExercisesByType(int exerciseTypeId)
     {
         return _context.Exercises
+            .IgnoreQueryFilters()
             .Where(e => e.TypeId == exerciseTypeId)
             .Include(e => e.Type)
             .Include(e => e.Workout)
