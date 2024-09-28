@@ -309,6 +309,9 @@ namespace healthspan_api.Migrations
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("longtext");
 
+                    b.Property<string>("TrainerId")
+                        .HasColumnType("varchar(255)");
+
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("tinyint(1)");
 
@@ -327,6 +330,8 @@ namespace healthspan_api.Migrations
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
+
+                    b.HasIndex("TrainerId");
 
                     b.ToTable("AspNetUsers", (string)null);
                 });
@@ -449,6 +454,15 @@ namespace healthspan_api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("User", b =>
+                {
+                    b.HasOne("User", "Trainer")
+                        .WithMany("Trainees")
+                        .HasForeignKey("TrainerId");
+
+                    b.Navigation("Trainer");
+                });
+
             modelBuilder.Entity("Workout", b =>
                 {
                     b.HasOne("User", "User")
@@ -460,6 +474,8 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("User", b =>
                 {
+                    b.Navigation("Trainees");
+
                     b.Navigation("Workouts");
                 });
 
