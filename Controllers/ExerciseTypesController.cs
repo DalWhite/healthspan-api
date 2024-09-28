@@ -20,8 +20,9 @@ public class ExerciseTypesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes(bool? favourite)
+    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes(bool? favourite, string userId)
     {
+        //TODO: this favorite logic should not be here and should not be applied after mapping
         try
         {
             var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
@@ -30,7 +31,7 @@ public class ExerciseTypesController : ControllerBase
             foreach (var exerciseType in domainExerciseTypes)
             {
                 var mappedExType = exerciseType.Adapt<GetExerciseTypeResource>();
-                mappedExType.IsFavourite = IsFavouriteExType(exerciseType);
+                mappedExType.IsFavourite = IsFavouriteExType(exerciseType, userId);
                 response.Add(mappedExType);
             }
 
@@ -45,13 +46,14 @@ public class ExerciseTypesController : ControllerBase
             return BadRequest($"Error: {ex.Message}");
         }
     }
-    private bool IsFavouriteExType(ExerciseType exerciseType)
+    private bool IsFavouriteExType(ExerciseType exerciseType, string userId)
     {
+        var userForFavFilter = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId(): userId;
         if(exerciseType.FavoritedUsers is null)
         {
             return false;
         }
-        if(exerciseType.FavoritedUsers.Any(u => u.Id == _userProvider.GetUserId()))
+        if(exerciseType.FavoritedUsers.Any(u => u.Id == userForFavFilter))
         {
             return true;
         }
