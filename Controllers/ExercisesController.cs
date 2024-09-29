@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Services;
 
 [Authorize]
 [ApiController]
@@ -11,13 +12,15 @@ public class ExercisesController : ControllerBase
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly ExercisesService _exercisesService;
+    private readonly UserProvider _userProvider;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExercisesService exercisesService)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExercisesService exercisesService, UserProvider userProvider)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _exercisesService = exercisesService;
+        _userProvider = userProvider;
     }
 
     [HttpGet]
@@ -25,10 +28,11 @@ public class ExercisesController : ControllerBase
     {
         try
         {
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
             var exercises = new List<Exercise>();
             if (exerciseTypeId.HasValue)
             {   
-                exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value);
+                exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId);
             }
             if(!exerciseTypeId.HasValue)
             {
@@ -136,11 +140,12 @@ public class ExercisesController : ControllerBase
     }
     
     [HttpGet("{exerciseTypeId}/kpis")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId)
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId, string userId)
     {
         try
         {
-            var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId);
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
+            var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId, userId);
             if (exerciseTypeKpis is not null)
             {
                 var response = exerciseTypeKpis;
@@ -157,11 +162,12 @@ public class ExercisesController : ControllerBase
         }
     }
     [HttpGet("{exerciseTypeId}/trends")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type)
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type, string userId)
     {
         try
         {
-            var exerciseTypeTrends =  _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type);
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
+            var exerciseTypeTrends =  _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
             if (exerciseTypeTrends is not null)
             {
                 var response = exerciseTypeTrends;

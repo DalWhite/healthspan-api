@@ -52,10 +52,11 @@ public class ExercisesRepository
 
         return query.ToList();
     }
-    public List<Exercise> GetExercisesByType(int exerciseTypeId)
+    public List<Exercise> GetExercisesByType(int exerciseTypeId, string userId)
     {
         return _context.Exercises
             .IgnoreQueryFilters()
+            .Where(e => e.Workout.UserId == userId)
             .Where(e => e.TypeId == exerciseTypeId)
             .Include(e => e.Type)
             .Include(e => e.Workout)
