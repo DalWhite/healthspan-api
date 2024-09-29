@@ -10,9 +10,9 @@ public class ExercisesService
         _exercisesRepository = exercisesRepository;
     }
 
-    public GetExerciseTypeKpis GetExerciseTypeKpisOfUser(int exerciseTypeId)
+    public GetExerciseTypeKpis GetExerciseTypeKpisOfUser(int exerciseTypeId, string userId)
     {
-        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId);
+        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId, userId);
         if (typeExercises.Count is 0)
         {
             return new GetExerciseTypeKpis();
@@ -55,9 +55,9 @@ public class ExercisesService
         return typeSessions;
     }
 
-    public GetExerciseTypeTrends GetExerciseTypeTrendsOfUser(int exerciseTypeId, TrendKpiType type)
+    public GetExerciseTypeTrends GetExerciseTypeTrendsOfUser(int exerciseTypeId, TrendKpiType type, string userId)
     {
-        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId).OrderBy(e => e.Workout.Date);
+        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId, userId).OrderBy(e => e.Workout.Date);
         var result = new GetExerciseTypeTrends() { Points = new List<DataPoint>() };
 
         switch (type)
