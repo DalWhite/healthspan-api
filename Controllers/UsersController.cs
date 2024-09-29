@@ -85,4 +85,18 @@ public class UsersController : ControllerBase
             return BadRequest($"Error: {ex.Message}");
         }
     }
+    [HttpGet("roles")]
+    public ActionResult<GetUserResource> GetUserRoles()
+    {
+        try
+        {
+            var roles = _userRepository.GetUserRoles(_userProvider.GetUserId());
+            var response = roles.Adapt<List<string>>();
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Error: {ex.Message}");
+        }
+    }
 }

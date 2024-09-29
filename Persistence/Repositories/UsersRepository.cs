@@ -1,4 +1,5 @@
 using Mapster;
+using Microsoft.AspNetCore.Identity;
 using Services;
 
 public class UsersRepository
@@ -18,6 +19,11 @@ public class UsersRepository
     public User GetUser(string Id)
     {
         return _context.Users.Find(Id);
+    }
+    public List<Role> GetUserRoles(string userId)
+    {
+        var userRoleIds = _context.UserRoles.Where(ur => ur.UserId == userId).Select(r=>r.RoleId).ToList();
+        return _context.Roles.Where(r => userRoleIds.Contains(r.Id)).ToList();
     }
     public List<User> GetTrainees()
     {

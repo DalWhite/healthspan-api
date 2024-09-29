@@ -27,6 +27,7 @@ builder.Services.AddDbContext<MainDbContext>(
        options => options.UseMySQL(dbConnectionString));
 
 builder.Services.AddIdentityCore<User>()
+    .AddRoles<Role>()
     .AddEntityFrameworkStores<MainDbContext>()
     .AddApiEndpoints();
 builder.Services.AddCors(options =>
