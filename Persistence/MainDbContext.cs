@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Services;
 
-public class MainDbContext : IdentityDbContext<User>
+public class MainDbContext : IdentityDbContext<User, Role, string>
 {
     public DbSet<Workout> Workouts { get; set; }
     public DbSet<Exercise> Exercises { get; set; }
