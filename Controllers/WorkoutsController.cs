@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Services;
 
 [Authorize]
 [ApiController]
@@ -9,11 +10,13 @@ public class WorkoutsController : ControllerBase
 {
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly UserProvider _userProvider;
 
-    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor)
+    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor, UserProvider userProvider)
     {
         _workoutsRepository = workoutRepository;
         _httpContextAccessor = httpContextAccessor;
+        _userProvider = userProvider;
     }
     [HttpGet]
     public ActionResult<List<GetWorkoutResource>> GetWorkouts()
@@ -35,6 +38,7 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
+            workoutResource.UserId ??= _userProvider.GetUserId();
             var domainWorkout = workoutResource.Adapt<Workout>();
             var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
             return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, domainWorkout);

@@ -12,8 +12,6 @@ public class WorkoutsRepository
     }
     public Guid AddWorkout(Workout workout)
     {
-        workout.UserId = _userProvider.GetUserId();
-
         _context.Workouts.Add(workout);
         _context.SaveChanges();
         return workout.Id;
