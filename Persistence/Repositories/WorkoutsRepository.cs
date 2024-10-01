@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Services;
 
 public class WorkoutsRepository
@@ -20,9 +21,12 @@ public class WorkoutsRepository
     {
         return _context.Workouts.Find(Id);
     }
-    public List<Workout> GetWorkouts()
+    public List<Workout> GetWorkouts(string userId)
     {
-        return _context.Workouts.ToList();
+        return _context.Workouts
+        .IgnoreQueryFilters()
+        .Where(w => w.UserId == userId)
+        .ToList();
     }
     public void UpdateWorkout(Workout workout)
     {

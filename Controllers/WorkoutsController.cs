@@ -19,11 +19,12 @@ public class WorkoutsController : ControllerBase
         _userProvider = userProvider;
     }
     [HttpGet]
-    public ActionResult<List<GetWorkoutResource>> GetWorkouts()
+    public ActionResult<List<GetWorkoutResource>> GetWorkouts(string traineeId)
     {
         try
         {
-            var domainWorkouts = _workoutsRepository.GetWorkouts();
+            var userId = string.IsNullOrEmpty(traineeId) ? _userProvider.GetUserId(): traineeId;
+            var domainWorkouts = _workoutsRepository.GetWorkouts(userId);
             var response = domainWorkouts.Adapt<List<GetWorkoutResource>>();
             return Ok(response);
         }
