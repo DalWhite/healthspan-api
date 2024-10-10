@@ -5,15 +5,13 @@ using Services;
 public class ExercisesRepository
 {
     private readonly MainDbContext _context;
-    private UserProvider _userProvider;
-    public ExercisesRepository(MainDbContext context, UserProvider userProvider)
+    public ExercisesRepository(MainDbContext context)
     {
         _context = context;
-        _userProvider = userProvider;
     }
-    public Guid AddExercise(Exercise exercise)
+    public Guid AddExercise(Exercise exercise, string userId)
     {
-        CalculateComputedValues(exercise);
+        CalculateComputedValues(exercise, userId);
 
         _context.Exercises.Add(exercise);
         _context.SaveChanges();
@@ -26,7 +24,6 @@ public class ExercisesRepository
         _context.Remove(exerciseToDelete);
         _context.SaveChanges();
     }
-
 
     public Exercise GetExercise(Guid Id)
     {
@@ -62,7 +59,7 @@ public class ExercisesRepository
             .Include(e => e.Workout)
             .ToList();
     }
-    public void UpdateExercise(Exercise exercise)
+    public void UpdateExercise(Exercise exercise, string userId)
     {
         var existingEntity = GetExercise(exercise.Id);
         if (exercise.Series is not null)
@@ -83,10 +80,10 @@ public class ExercisesRepository
         }
         //FIX: this is wrong. Should try get a workout on that date. If there is one, swap workout. If not, create one.
         existingEntity.Workout.Date = exercise.Workout.Date;
-        CalculateComputedValues(exercise);
+        CalculateComputedValues(exercise,userId);
         _context.SaveChanges();
     }
-    public void CalculateComputedValues(Exercise exercise)
+    public void CalculateComputedValues(Exercise exercise, string userId)
     {
         var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
         exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
@@ -94,8 +91,7 @@ public class ExercisesRepository
 
         double? historicMaxRepetition = exercise.MaxRepetition;
         
-        var exercisesOfType = _context.Exercises
-            .Where(e=> e.Type.Id == exercise.TypeId);
+        var exercisesOfType = GetExercisesByType((int)exercise.TypeId, userId);
         
         if (exercisesOfType.Any())
         {

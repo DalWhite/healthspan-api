@@ -42,12 +42,12 @@ builder.Services.AddCors(options =>
     });
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<UserProvider>();
+builder.Services.AddScoped<CurrentUserProvider>();
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
-builder.Services.AddScoped<ExercisesService>();
+builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<CsvService>();
 
 var app = builder.Build();

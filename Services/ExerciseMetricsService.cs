@@ -1,11 +1,11 @@
 using static ExercisesController;
 using System.Linq;
 
-public class ExercisesService
+public class ExerciseMetricsService
 {
     private readonly ExercisesRepository _exercisesRepository;
 
-    public ExercisesService(ExercisesRepository exercisesRepository)
+    public ExerciseMetricsService(ExercisesRepository exercisesRepository)
     {
         _exercisesRepository = exercisesRepository;
     }
@@ -88,5 +88,31 @@ public class ExercisesService
 
         }
         return result;
+    }
+    public void CalculateComputedValues(Exercise exercise, string userId)
+    {
+        var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
+        exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
+        exercise.Volume = (int?)(exercise.Repetitions * exercise.Series * exercise.Weight);
+
+        double? historicMaxRepetition = exercise.MaxRepetition;
+        
+        var exercisesOfType = _exercisesRepository.GetExercisesByType((int)exercise.TypeId, userId);
+        
+        if (exercisesOfType.Any())
+        {
+            historicMaxRepetition = exercisesOfType
+                .OrderByDescending(e => e.MaxRepetition)
+                .Select(e => e.MaxRepetition)
+                .First();
+        }
+        if(exercise.Weight != 0)
+        {
+            exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
+        }
+        else
+        {
+            exercise.Intensity = 0;
+        }
     }
 }

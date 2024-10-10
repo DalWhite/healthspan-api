@@ -11,10 +11,10 @@ public class ExercisesController : ControllerBase
     private readonly ExercisesRepository _exerciseRepository;
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
-    private readonly ExercisesService _exercisesService;
-    private readonly UserProvider _userProvider;
+    private readonly ExerciseMetricsService _exercisesService;
+    private readonly CurrentUserProvider _userProvider;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExercisesService exercisesService, UserProvider userProvider)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
@@ -28,7 +28,7 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var exercises = new List<Exercise>();
             if (exerciseTypeId.HasValue)
             {   
@@ -48,14 +48,15 @@ public class ExercisesController : ControllerBase
         }
     }
     [HttpPost]
-    public IActionResult AddExercise(AddExerciseResource exerciseResource)
+    public IActionResult AddExercise(AddExerciseResource exerciseResource, string userId)
     {
         try
         {
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var domainExercise = exerciseResource.Adapt<Exercise>();
             domainExercise.TypeId = exerciseResource.TypeId;
             domainExercise.WorkoutId = exerciseResource.WorkoutId;
-            var exerciseId = _exerciseRepository.AddExercise(domainExercise);
+            var exerciseId = _exerciseRepository.AddExercise(domainExercise, userId);
             return CreatedAtAction(nameof(GetExercise), new{id = exerciseId}, domainExercise);
         }
         catch (Exception ex)
@@ -99,13 +100,13 @@ public class ExercisesController : ControllerBase
         }
     }
     [HttpGet("{id}/metrics")]
-    public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id)
+    public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id, string userId)
     {
         try
         {
 
             var domainExercise = _exerciseRepository.GetExercise(id);
-            _exerciseRepository.CalculateComputedValues(domainExercise);
+            _exercisesService.CalculateComputedValues(domainExercise, userId);
 
             var exerciseMetrics = domainExercise.Adapt<GetExerciseMetrics>();
             return Ok(exerciseMetrics);
@@ -117,15 +118,16 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpPut]
-    public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource)
+    public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource, string userId)
     {
         try
         {
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var domainExercise = exerciseResource.Adapt<Exercise>();
             var existingExercise = _exerciseRepository.GetExercise(domainExercise.Id);
             if (existingExercise is not null)
             {
-                _exerciseRepository.UpdateExercise(domainExercise);
+                _exerciseRepository.UpdateExercise(domainExercise, userId);
                 return Ok("Exercise updated successfully");
             }
             else
@@ -144,7 +146,7 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId, userId);
             if (exerciseTypeKpis is not null)
             {
@@ -166,7 +168,7 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId() : userId;
+            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var exerciseTypeTrends =  _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
             if (exerciseTypeTrends is not null)
             {

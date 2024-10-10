@@ -9,10 +9,10 @@ using Services;
 public class ExerciseTypesController : ControllerBase
 {
     private readonly ExerciseTypesRepository _exerciseTypeRepository;
-    private readonly UserProvider _userProvider;
+    private readonly CurrentUserProvider _userProvider;
     private readonly UsersRepository _usersRepository;
 
-    public ExerciseTypesController(ExerciseTypesRepository exerciseTypeRepository, UserProvider userProvider, UsersRepository usersRepository)
+    public ExerciseTypesController(ExerciseTypesRepository exerciseTypeRepository, CurrentUserProvider userProvider, UsersRepository usersRepository)
     {
         _exerciseTypeRepository = exerciseTypeRepository;
         _userProvider = userProvider;
@@ -48,7 +48,7 @@ public class ExerciseTypesController : ControllerBase
     }
     private bool IsFavouriteExType(ExerciseType exerciseType, string userId)
     {
-        var userForFavFilter = string.IsNullOrEmpty(userId) ? _userProvider.GetUserId(): userId;
+        var userForFavFilter = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId(): userId;
         if(exerciseType.FavoritedUsers is null)
         {
             return false;
@@ -107,7 +107,7 @@ public class ExerciseTypesController : ControllerBase
             {
                 if(exerciseTypeResource.IsFavourite)
                 {
-                    var userId = _userProvider.GetUserId();
+                    var userId = _userProvider.GetCurrentUserId();
                     var user = _usersRepository.GetUser(userId);
                     if(domainExerciseType.FavoritedUsers != null)
                     {

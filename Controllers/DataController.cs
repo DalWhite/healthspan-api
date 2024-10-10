@@ -8,10 +8,10 @@ using Services;
 public class DataController : ControllerBase
 {
     private readonly CsvService _csvService;
-    private readonly UserProvider _userProvider;
+    private readonly CurrentUserProvider _userProvider;
     private readonly ExercisesRepository _exercisesRepository;
     private readonly WorkoutsRepository _workoutsRepository;
-    public DataController(CsvService csvService, UserProvider userProvider, ExercisesRepository exercisesRepository, WorkoutsRepository workoutsRepository)
+    public DataController(CsvService csvService, CurrentUserProvider userProvider, ExercisesRepository exercisesRepository, WorkoutsRepository workoutsRepository)
     {
         _csvService = csvService;
         _userProvider = userProvider;
@@ -51,13 +51,13 @@ public class DataController : ControllerBase
             var workout = new Workout
             {
                 Date = group.Key,
-                UserId = _userProvider.GetUserId()
+                UserId = _userProvider.GetCurrentUserId()
             };
             var workoutId = _workoutsRepository.AddWorkout(workout);
             foreach (var ex in group.Value)
             {
                 ex.WorkoutId = workoutId;
-                _exercisesRepository.AddExercise(ex);
+                _exercisesRepository.AddExercise(ex, _userProvider.GetCurrentUserId());
             }
         }
     }
