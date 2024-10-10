@@ -9,9 +9,9 @@ using Services;
 public class UsersController : ControllerBase
 {
     private readonly UsersRepository _userRepository;
-    private readonly UserProvider _userProvider;
+    private readonly CurrentUserProvider _userProvider;
 
-    public UsersController(UsersRepository userRepository, UserProvider userProvider)
+    public UsersController(UsersRepository userRepository, CurrentUserProvider userProvider)
     {
         _userRepository = userRepository;
         _userProvider = userProvider;
@@ -90,7 +90,7 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var roles = _userRepository.GetUserRoles(_userProvider.GetUserId());
+            var roles = _userRepository.GetUserRoles(_userProvider.GetCurrentUserId());
             var response = roles.Adapt<List<string>>();
             return Ok(response);
         }

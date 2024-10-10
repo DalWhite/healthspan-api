@@ -5,8 +5,8 @@ using Services;
 public class UsersRepository
 {
     private readonly MainDbContext _context;
-    private readonly UserProvider _userProvider;
-    public UsersRepository(MainDbContext context, UserProvider userProvider)
+    private readonly CurrentUserProvider _userProvider;
+    public UsersRepository(MainDbContext context, CurrentUserProvider userProvider)
     {
         _context = context;
         _userProvider = userProvider;
@@ -27,7 +27,7 @@ public class UsersRepository
     }
     public List<User> GetTrainees()
     {
-        var currentUserId = _userProvider.GetUserId();
+        var currentUserId = _userProvider.GetCurrentUserId();
         return _context.Users.Where(u => u.Trainer.Id == currentUserId)
             .ToList();
     }

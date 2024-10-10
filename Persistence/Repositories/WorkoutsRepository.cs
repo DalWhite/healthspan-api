@@ -5,8 +5,8 @@ using Services;
 public class WorkoutsRepository
 {
     private readonly MainDbContext _context;
-    private readonly UserProvider _userProvider;
-    public WorkoutsRepository(MainDbContext context, UserProvider userProvider)
+    private readonly CurrentUserProvider _userProvider;
+    public WorkoutsRepository(MainDbContext context, CurrentUserProvider userProvider)
     {
         _context = context;
         _userProvider = userProvider;

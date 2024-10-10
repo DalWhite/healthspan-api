@@ -10,9 +10,9 @@ public class WorkoutsController : ControllerBase
 {
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly UserProvider _userProvider;
+    private readonly CurrentUserProvider _userProvider;
 
-    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor, UserProvider userProvider)
+    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor, CurrentUserProvider userProvider)
     {
         _workoutsRepository = workoutRepository;
         _httpContextAccessor = httpContextAccessor;
@@ -23,7 +23,7 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = string.IsNullOrEmpty(traineeId) ? _userProvider.GetUserId(): traineeId;
+            var userId = string.IsNullOrEmpty(traineeId) ? _userProvider.GetCurrentUserId(): traineeId;
             var domainWorkouts = _workoutsRepository.GetWorkouts(userId);
             var response = domainWorkouts.Adapt<List<GetWorkoutResource>>();
             return Ok(response);
@@ -39,7 +39,7 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            workoutResource.UserId ??= _userProvider.GetUserId();
+            workoutResource.UserId ??= _userProvider.GetCurrentUserId();
             var domainWorkout = workoutResource.Adapt<Workout>();
             var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
             return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, domainWorkout);

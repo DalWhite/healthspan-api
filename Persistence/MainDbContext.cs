@@ -8,9 +8,9 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<Exercise> Exercises { get; set; }
     public DbSet<ExerciseType> ExerciseTypes { get; set; }
     public DbSet<Muscle> Muscle { get; set; }
-    private UserProvider _userProvider;
+    private CurrentUserProvider _userProvider;
 
-    public MainDbContext(DbContextOptions<MainDbContext> options, UserProvider userProvider)
+    public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
         : base(options)
     {
         _userProvider = userProvider;
@@ -18,8 +18,8 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
-        builder.Entity<Workout>().HasQueryFilter(w => w.User.Id == _userProvider.GetUserId());
-        builder.Entity<Exercise>().HasQueryFilter(e => e.Workout.User.Id == _userProvider.GetUserId());
+        builder.Entity<Workout>().HasQueryFilter(w => w.User.Id == _userProvider.GetCurrentUserId());
+        builder.Entity<Exercise>().HasQueryFilter(e => e.Workout.User.Id == _userProvider.GetCurrentUserId());
 
         builder.Entity<Muscle>()
             .Property(e => e.Side).HasConversion(v => v.ToString(), v => (MuscleSide)Enum.Parse(typeof(MuscleSide), v));
