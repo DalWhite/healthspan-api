@@ -76,7 +76,7 @@ public class ExercisesRepository
         }
         if (exercise.Type is not null)
         {
-            existingEntity.Type = exercise.Type;
+            existingEntity.TypeId = exercise.TypeId;
         }
         //FIX: this is wrong. Should try get a workout on that date. If there is one, swap workout. If not, create one.
         existingEntity.Workout.Date = exercise.Workout.Date;
