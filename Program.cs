@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using Scalar.AspNetCore;
 using Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,7 +20,6 @@ builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddEndpointsApiExplorer();
 
-AddSwagger(builder);
 builder.Services.AddControllers();
 
 
@@ -46,9 +46,11 @@ builder.Services.AddScoped<CurrentUserProvider>();
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
+builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<CsvService>();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -58,11 +60,19 @@ app.UseCors("MyAllowSpecificOrigins");
 app.MapIdentityApi<User>();
 app.MapControllers();
 
-app.UseSwagger();
-app.UseSwaggerUI();
-
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference(options => {
+        options
+            .WithTitle("Healthspan api")
+            .WithTheme(ScalarTheme.DeepSpace)
+            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+            .WithHttpBearerAuthentication(bearerOptions => bearerOptions.Token = "HToken");
+    });
+}
 app.MapPost("/Logout", async (SignInManager<User> signInManager,
-    [FromBody]object empty) =>
+    [FromBody] object empty) =>
 {
     if (empty != null)
     {
@@ -75,36 +85,3 @@ app.MapPost("/Logout", async (SignInManager<User> signInManager,
 .RequireAuthorization();
 
 app.Run();
-
-static void AddSwagger(WebApplicationBuilder builder)
-{
-    builder.Services.AddSwaggerGen(options =>
-    {
-        options.SwaggerDoc("v1", new OpenApiInfo { Title = "Healthspan api", Version = "v1" });
-
-        options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-        {
-            In = ParameterLocation.Header,
-            Description = "Please enter a valid token",
-            Name = "Authorization",
-            Type = SecuritySchemeType.Http,
-            BearerFormat = "JWT",
-            Scheme = "Bearer"
-        });
-
-        options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-    });
-}
