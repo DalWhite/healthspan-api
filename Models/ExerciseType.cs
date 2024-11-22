@@ -8,5 +8,8 @@ public class ExerciseType
     public Muscle PrimaryMuscle { get; set; }
     public int? SecondaryMuscleId { get; set; }
     public Muscle SecondaryMuscle { get; set; }
+    public MuscleGroup MuscleGroup { get; set; }
+    public int DifficultyLevel { get; set; }
     public List<User> FavoritedUsers { get; set; }
+    public List<WorkoutTemplate> WorkoutTemplates { get; set; }
 }

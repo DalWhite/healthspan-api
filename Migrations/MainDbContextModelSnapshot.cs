@@ -72,6 +72,9 @@ namespace healthspan_api.Migrations
                     b.Property<string>("ImageRoute")
                         .HasColumnType("longtext");
 
+                    b.Property<int>("MuscleGroup")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .HasColumnType("longtext");
 
@@ -105,30 +108,19 @@ namespace healthspan_api.Migrations
                     b.ToTable("ExerciseTypeUser");
                 });
 
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
+            modelBuilder.Entity("ExerciseTypeWorkoutTemplate", b =>
                 {
-                    b.Property<string>("Id")
-                        .HasColumnType("varchar(255)");
+                    b.Property<int>("ExerciseTypesId")
+                        .HasColumnType("int");
 
-                    b.Property<string>("ConcurrencyStamp")
-                        .IsConcurrencyToken()
-                        .HasColumnType("longtext");
+                    b.Property<int>("WorkoutTemplatesId")
+                        .HasColumnType("int");
 
-                    b.Property<string>("Name")
-                        .HasMaxLength(256)
-                        .HasColumnType("varchar(256)");
+                    b.HasKey("ExerciseTypesId", "WorkoutTemplatesId");
 
-                    b.Property<string>("NormalizedName")
-                        .HasMaxLength(256)
-                        .HasColumnType("varchar(256)");
+                    b.HasIndex("WorkoutTemplatesId");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("NormalizedName")
-                        .IsUnique()
-                        .HasDatabaseName("RoleNameIndex");
-
-                    b.ToTable("AspNetRoles", (string)null);
+                    b.ToTable("ExerciseTypeWorkoutTemplate");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -252,7 +244,70 @@ namespace healthspan_api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Muscle");
+                    b.ToTable("Muscles");
+                });
+
+            modelBuilder.Entity("Role", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("NormalizedName")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("RoleNameIndex");
+
+                    b.ToTable("AspNetRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Routine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Routines");
+                });
+
+            modelBuilder.Entity("RoutineWorkoutTemplate", b =>
+                {
+                    b.Property<Guid>("RoutinesId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("WorkoutTemplatesId")
+                        .HasColumnType("int");
+
+                    b.HasKey("RoutinesId", "WorkoutTemplatesId");
+
+                    b.HasIndex("WorkoutTemplatesId");
+
+                    b.ToTable("RoutineWorkoutTemplate");
                 });
 
             modelBuilder.Entity("User", b =>
@@ -345,6 +400,9 @@ namespace healthspan_api.Migrations
                     b.Property<DateTime?>("Date")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<Guid?>("RoutineId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("Type")
                         .HasColumnType("longtext");
 
@@ -353,9 +411,28 @@ namespace healthspan_api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RoutineId");
+
                     b.HasIndex("UserId");
 
                     b.ToTable("Workouts");
+                });
+
+            modelBuilder.Entity("WorkoutTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("Frequency")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WorkoutTemplate");
                 });
 
             modelBuilder.Entity("Exercise", b =>
@@ -403,9 +480,24 @@ namespace healthspan_api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ExerciseTypeWorkoutTemplate", b =>
+                {
+                    b.HasOne("ExerciseType", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseTypesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WorkoutTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutTemplatesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
-                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
+                    b.HasOne("Role", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -432,7 +524,7 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
                 {
-                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
+                    b.HasOne("Role", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -454,6 +546,30 @@ namespace healthspan_api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Routine", b =>
+                {
+                    b.HasOne("User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RoutineWorkoutTemplate", b =>
+                {
+                    b.HasOne("Routine", null)
+                        .WithMany()
+                        .HasForeignKey("RoutinesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WorkoutTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutTemplatesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("User", b =>
                 {
                     b.HasOne("User", "Trainer")
@@ -465,11 +581,20 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("Workout", b =>
                 {
+                    b.HasOne("Routine", null)
+                        .WithMany("Workouts")
+                        .HasForeignKey("RoutineId");
+
                     b.HasOne("User", "User")
                         .WithMany("Workouts")
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Routine", b =>
+                {
+                    b.Navigation("Workouts");
                 });
 
             modelBuilder.Entity("User", b =>
