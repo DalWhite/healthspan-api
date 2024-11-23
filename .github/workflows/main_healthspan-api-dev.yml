@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
   workflow_dispatch:
 
 jobs:
@@ -19,7 +20,7 @@ jobs:
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: '8.x'
+          dotnet-version: '9.x'
           include-prerelease: true
 
       - name: Build with dotnet
@@ -50,6 +51,7 @@ jobs:
   deploy:
     runs-on: windows-latest
     needs: build
+    if: github.ref == 'refs/heads/release/*'
     environment:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
