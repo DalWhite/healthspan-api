@@ -51,7 +51,10 @@ jobs:
   deploy:
     runs-on: windows-latest
     needs: build
-    if: github.ref == 'refs/heads/release/**'
+    if:
+      contains('
+        refs/heads/release
+      ', github.ref)
     environment:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
