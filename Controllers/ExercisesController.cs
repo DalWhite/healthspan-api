@@ -39,7 +39,7 @@ public class ExercisesController : ControllerBase
                 exercises = _exerciseRepository.GetExercises(userId);
             }
             
-            var response = exercises.Adapt<List<GetExerciseResource>>().OrderBy(e => e.Workout.Date);
+            var response = exercises.Adapt<List<GetExerciseResource>>().OrderByDescending(e => e.Workout.Date);
             return Ok(response);
         }
         catch (Exception ex)
