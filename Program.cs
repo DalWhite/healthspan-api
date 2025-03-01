@@ -24,7 +24,11 @@ builder.Services.AddControllers();
 
 
 builder.Services.AddDbContext<MainDbContext>(
-       options => options.UseMySQL(dbConnectionString));
+       options => options.UseMySql(
+        dbConnectionString,
+        ServerVersion.AutoDetect(dbConnectionString),
+        options => options.MigrationsHistoryTable("__EFMigrationsHistory")
+    ));
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<Role>()
@@ -63,7 +67,8 @@ app.MapControllers();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    app.MapScalarApiReference(options => {
+    app.MapScalarApiReference(options =>
+    {
         options
             .WithTitle("Healthspan api")
             .WithTheme(ScalarTheme.DeepSpace)
