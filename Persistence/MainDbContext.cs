@@ -7,7 +7,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<Workout> Workouts { get; set; }
     public DbSet<Exercise> Exercises { get; set; }
     public DbSet<ExerciseType> ExerciseTypes { get; set; }
-    public DbSet<Muscle> Muscle { get; set; }
+    public DbSet<Muscle> Muscles { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
