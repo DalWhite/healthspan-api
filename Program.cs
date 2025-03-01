@@ -50,7 +50,7 @@ builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<CsvService>();
-builder.Services.AddOpenApi();
+//builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -62,7 +62,7 @@ app.MapControllers();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    //app.MapOpenApi();
     app.MapScalarApiReference(options => {
         options
             .WithTitle("Healthspan api")
