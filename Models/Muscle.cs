@@ -15,7 +15,7 @@ public enum MuscleGroup
     Chest,
     Back,
     Arms,
-    Abdominals,
+    Core,
     Legs,
     Shoulders,
 }
