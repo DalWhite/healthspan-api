@@ -21,6 +21,12 @@ public class ExerciseTypesRepository
     {
         return _context.ExerciseTypes.Include(et => et.FavoritedUsers).ToList();
     }
+    public List<ExerciseType> GetExerciseTypesByIds(List<int> exerciseTypeIds)
+    {
+        return _context.ExerciseTypes
+            .Where(et => exerciseTypeIds.Contains(et.Id))
+            .ToList();
+    }
     public void UpdateExerciseType(ExerciseType exerciseType)
     {
         var existingEntity = GetExerciseType(exerciseType.Id);
