@@ -24,23 +24,66 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<GetExerciseResource>> GetExercises(int? exerciseTypeId, string userId)
+    public ActionResult<PagedResult<GetExerciseResource>> GetExercises(
+        int? exerciseTypeId, 
+        string userId, 
+        int page = 1, 
+        int pageSize = 10, 
+        string sortBy = "date", 
+        bool descending = true)
     {
         try
         {
             userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var exercises = new List<Exercise>();
+            
             if (exerciseTypeId.HasValue)
             {   
                 exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId);
             }
-            if(!exerciseTypeId.HasValue)
+            else
             {
                 exercises = _exerciseRepository.GetExercises(userId);
             }
             
-            var response = exercises.Adapt<List<GetExerciseResource>>().OrderByDescending(e => e.Workout.Date);
-            return Ok(response);
+            var mappedExercises = exercises.Adapt<List<GetExerciseResource>>();
+            
+            // Apply sorting
+            IEnumerable<GetExerciseResource> sortedExercises = sortBy.ToLower() switch
+            {
+                "date" => descending 
+                    ? mappedExercises.OrderByDescending(e => e.Workout.Date)
+                    : mappedExercises.OrderBy(e => e.Workout.Date),
+                "name" => descending 
+                    ? mappedExercises.OrderByDescending(e => e.Type.Name)
+                    : mappedExercises.OrderBy(e => e.Type.Name),
+                "type" => descending 
+                    ? mappedExercises.OrderByDescending(e => e.Type.Name)
+                    : mappedExercises.OrderBy(e => e.Type.Name),
+                _ => descending 
+                    ? mappedExercises.OrderByDescending(e => e.Workout.Date)
+                    : mappedExercises.OrderBy(e => e.Workout.Date)
+            };
+            
+            // Apply pagination
+            var totalCount = sortedExercises.Count();
+            var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+            
+            var pagedExercises = sortedExercises
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+            
+            var result = new PagedResult<GetExerciseResource>
+            {
+                Items = pagedExercises,
+                TotalCount = totalCount,
+                PageSize = pageSize,
+                CurrentPage = page,
+                TotalPages = totalPages
+            };
+            
+            return Ok(result);
         }
         catch (Exception ex)
         {
