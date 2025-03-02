@@ -2,7 +2,10 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using Services;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,9 +23,12 @@ builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddControllers();
 
-
-builder.Services.AddDbContext<MainDbContext>(
-       options => options.UseMySQL(dbConnectionString));
+builder.Services.AddDbContext<MainDbContext>(options => 
+    options.UseMySql(
+        dbConnectionString,
+        ServerVersion.AutoDetect(dbConnectionString)
+    )
+);
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<Role>()
@@ -48,7 +54,7 @@ builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<CsvService>();
-//builder.Services.AddOpenApi();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -60,14 +66,14 @@ app.MapControllers();
 
 if (app.Environment.IsDevelopment())
 {
-    //app.MapOpenApi();
-    // app.MapScalarApiReference(options => {
-    //     options
-    //         .WithTitle("Healthspan api")
-    //         .WithTheme(ScalarTheme.DeepSpace)
-    //         .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-    //         .WithHttpBearerAuthentication(bearerOptions => bearerOptions.Token = "HToken");
-    // });
+    app.MapOpenApi();
+    app.MapScalarApiReference(options => {
+        options
+            .WithTitle("Healthspan api")
+            .WithTheme(ScalarTheme.DeepSpace)
+            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+            .WithHttpBearerAuthentication(bearerOptions => bearerOptions.Token = "HToken");
+    });
 }
 app.MapPost("/Logout", async (SignInManager<User> signInManager,
     [FromBody] object empty) =>
