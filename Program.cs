@@ -61,13 +61,13 @@ app.MapControllers();
 if (app.Environment.IsDevelopment())
 {
     //app.MapOpenApi();
-    app.MapScalarApiReference(options => {
-        options
-            .WithTitle("Healthspan api")
-            .WithTheme(ScalarTheme.DeepSpace)
-            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-            .WithHttpBearerAuthentication(bearerOptions => bearerOptions.Token = "HToken");
-    });
+    // app.MapScalarApiReference(options => {
+    //     options
+    //         .WithTitle("Healthspan api")
+    //         .WithTheme(ScalarTheme.DeepSpace)
+    //         .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+    //         .WithHttpBearerAuthentication(bearerOptions => bearerOptions.Token = "HToken");
+    // });
 }
 app.MapPost("/Logout", async (SignInManager<User> signInManager,
     [FromBody] object empty) =>
