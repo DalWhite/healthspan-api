@@ -2,8 +2,6 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi.Models;
-using Scalar.AspNetCore;
 using Services;
 
 var builder = WebApplication.CreateBuilder(args);
