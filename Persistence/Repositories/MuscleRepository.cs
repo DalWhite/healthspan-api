@@ -19,7 +19,6 @@ public class MuscleRepository
     public async Task<List<Muscle>> GetAllMusclesAsync()
     {
         return await _context.Muscles
-            .Include(m => m.MuscleGroup)
             .ToListAsync();
     }
 }
