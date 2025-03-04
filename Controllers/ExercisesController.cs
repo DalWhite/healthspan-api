@@ -22,68 +22,80 @@ public class ExercisesController : ControllerBase
         _exercisesService = exercisesService;
         _userProvider = userProvider;
     }
-
     [HttpGet]
-    public ActionResult<PagedResult<GetExerciseResource>> GetExercises(
-        int? exerciseTypeId, 
-        string userId, 
-        int page = 1, 
-        int pageSize = 10, 
-        string sortBy = "date", 
+    public ActionResult<object> GetExercises(
+        int? exerciseTypeId,
+        string userId,
+        int? page = null,
+        int? pageSize = null, 
+        string sortBy = "date",
         bool descending = true)
     {
         try
         {
             userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
             var exercises = new List<Exercise>();
-            
+
             if (exerciseTypeId.HasValue)
-            {   
+            {
                 exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId);
             }
             else
             {
                 exercises = _exerciseRepository.GetExercises(userId);
             }
-            
+
             var mappedExercises = exercises.Adapt<List<GetExerciseResource>>();
-            
+
             // Apply sorting
             IEnumerable<GetExerciseResource> sortedExercises = sortBy.ToLower() switch
             {
-                "date" => descending 
+                "date" => descending
                     ? mappedExercises.OrderByDescending(e => e.Workout.Date)
                     : mappedExercises.OrderBy(e => e.Workout.Date),
-                "name" => descending 
+                "name" => descending
                     ? mappedExercises.OrderByDescending(e => e.Type.Name)
                     : mappedExercises.OrderBy(e => e.Type.Name),
-                "type" => descending 
+                "type" => descending
                     ? mappedExercises.OrderByDescending(e => e.Type.Name)
                     : mappedExercises.OrderBy(e => e.Type.Name),
-                _ => descending 
+                _ => descending
                     ? mappedExercises.OrderByDescending(e => e.Workout.Date)
                     : mappedExercises.OrderBy(e => e.Workout.Date)
             };
-            
-            // Apply pagination
-            var totalCount = sortedExercises.Count();
-            var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-            
-            var pagedExercises = sortedExercises
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
-            
-            var result = new PagedResult<GetExerciseResource>
+
+            // Check if pagination is requested
+            bool usePagination = page.HasValue && pageSize.HasValue;
+
+            if (usePagination)
             {
-                Items = pagedExercises,
-                TotalCount = totalCount,
-                PageSize = pageSize,
-                CurrentPage = page,
-                TotalPages = totalPages
-            };
-            
-            return Ok(result);
+                // Apply pagination
+                int currentPage = page.Value;
+                int currentPageSize = pageSize.Value;
+                var totalCount = sortedExercises.Count();
+                var totalPages = (int)Math.Ceiling(totalCount / (double)currentPageSize);
+
+                var pagedExercises = sortedExercises
+                    .Skip((currentPage - 1) * currentPageSize)
+                    .Take(currentPageSize)
+                    .ToList();
+
+                var result = new PagedResult<GetExerciseResource>
+                {
+                    Items = pagedExercises,
+                    TotalCount = totalCount,
+                    PageSize = currentPageSize,
+                    CurrentPage = currentPage,
+                    TotalPages = totalPages
+                };
+
+                return Ok(result);
+            }
+            else
+            {
+                // Return full list without pagination
+                return Ok(sortedExercises.ToList());
+            }
         }
         catch (Exception ex)
         {
@@ -100,7 +112,7 @@ public class ExercisesController : ControllerBase
             domainExercise.TypeId = exerciseResource.TypeId;
             domainExercise.WorkoutId = exerciseResource.WorkoutId;
             var exerciseId = _exerciseRepository.AddExercise(domainExercise, userId);
-            return CreatedAtAction(nameof(GetExercise), new{id = exerciseId}, domainExercise);
+            return CreatedAtAction(nameof(GetExercise), new { id = exerciseId }, domainExercise);
         }
         catch (Exception ex)
         {
@@ -183,7 +195,7 @@ public class ExercisesController : ControllerBase
             return BadRequest($"Error: {ex.Message}");
         }
     }
-    
+
     [HttpGet("{exerciseTypeId}/kpis")]
     public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId, string userId)
     {
@@ -212,7 +224,7 @@ public class ExercisesController : ControllerBase
         try
         {
             userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
-            var exerciseTypeTrends =  _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
+            var exerciseTypeTrends = _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
             if (exerciseTypeTrends is not null)
             {
                 var response = exerciseTypeTrends;
