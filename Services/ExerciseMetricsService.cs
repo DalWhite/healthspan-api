@@ -18,16 +18,17 @@ public class ExerciseMetricsService
             return new GetExerciseTypeKpis();
         }
         // Group exercises by session (e.g., by date) and calculate max RM per session
-        var maxRMPerSession = typeExercises
+        var sessions = typeExercises
             .GroupBy(e => e.Workout.Date)
-            .Select(g => g.Max(e => e.MaxRepetition))
+            .Select(g => new { Date = g.Key, MaxRM = g.Max(e => e.MaxRepetition) })
+            .OrderBy(s => s.Date)
             .ToList();
 
         var result = new GetExerciseTypeKpis
         {
-            MaxRM = (float)maxRMPerSession.Max(),
-            MaxRMDate = typeExercises.First(e => e.MaxRepetition == maxRMPerSession.Max()).Workout.Date.Value,
-            Current1RM = (float)maxRMPerSession.Last(),
+            MaxRM = (float)sessions.Max(s => s.MaxRM),
+            MaxRMDate = typeExercises.First(e => e.MaxRepetition == sessions.Max(s => s.MaxRM)).Workout.Date.Value,
+            Current1RM = (float)sessions.Last().MaxRM,
             RMDiferentialInLast3Months = CalculateRMDiferentialInLast3Months(typeExercises),
             WeeklyFrequency = CalculateWeeklyFrequency(typeExercises, exerciseTypeId),
             PerceibedEffortLastSession = 5
