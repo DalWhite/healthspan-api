@@ -1,5 +1,6 @@
 using static ExercisesController;
 using System.Linq;
+using healthspan_api.Persistence.Repositories;
 
 public class ExerciseMetricsService
 {

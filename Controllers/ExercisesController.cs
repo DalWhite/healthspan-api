@@ -1,3 +1,4 @@
+using healthspan_api.Persistence.Repositories;
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -106,7 +107,6 @@ public class ExercisesController : ControllerBase
         {
 
             var domainExercise = _exerciseRepository.GetExercise(id);
-            _exercisesService.CalculateComputedValues(domainExercise, userId);
 
             var exerciseMetrics = domainExercise.Adapt<GetExerciseMetrics>();
             return Ok(exerciseMetrics);
