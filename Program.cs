@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-//using Scalar.AspNetCore;
+using Scalar.AspNetCore;
 using Services;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,7 @@ builder.Services.AddControllers();
 
 builder.Services.AddDbContext<MainDbContext>(
        options => options.UseMySQL(dbConnectionString));
+
 builder.Services.AddIdentityCore<User>()
     .AddRoles<Role>()
     .AddEntityFrameworkStores<MainDbContext>()
@@ -46,6 +49,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserProvider>();
 builder.Services.AddScoped<UsersRepository>();
+builder.Services.AddScoped<MuscleRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<RoutinesRepository>();

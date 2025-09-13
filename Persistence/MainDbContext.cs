@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Services;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 
 public class MainDbContext : IdentityDbContext<User, Role, string>
 {

@@ -7,8 +7,8 @@ public class Muscle
 }
 public enum MuscleSide
 {
-    Anterior,
-    Posterior
+    front,
+    back
 }
 public enum MuscleGroup
 {
@@ -18,4 +18,5 @@ public enum MuscleGroup
     Core,
     Legs,
     Shoulders,
+    Glutes
 }
