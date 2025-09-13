@@ -26,9 +26,12 @@ builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddControllers();
 
-
-builder.Services.AddDbContext<MainDbContext>(
-       options => options.UseMySQL(dbConnectionString));
+builder.Services.AddDbContext<MainDbContext>(options => 
+    options.UseMySql(
+        dbConnectionString,
+        ServerVersion.AutoDetect(dbConnectionString)
+    )
+);
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<Role>()
