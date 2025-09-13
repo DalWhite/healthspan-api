@@ -12,4 +12,5 @@ public class ExerciseType
     public int DifficultyLevel { get; set; }
     public List<User> FavoritedUsers { get; set; }
     public List<WorkoutTemplate> WorkoutTemplates { get; set; }
+    public string WeightType { get; set; }
 }
