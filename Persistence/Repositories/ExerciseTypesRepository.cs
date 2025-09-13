@@ -51,6 +51,10 @@ public class ExerciseTypesRepository
         {
             existingEntity.SecondaryMuscleId = exerciseType.SecondaryMuscleId;
         }
+        if (exerciseType.WeightType is not null)
+        {
+            existingEntity.WeightType = exerciseType.WeightType;
+        }
         existingEntity.FavoritedUsers = exerciseType.FavoritedUsers;
 
         _context.SaveChanges();

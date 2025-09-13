@@ -16,7 +16,7 @@ namespace healthspan_api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.0")
+                .HasAnnotation("ProductVersion", "9.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
@@ -91,6 +91,9 @@ namespace healthspan_api.Migrations
 
                     b.Property<int?>("SecondaryMuscleId")
                         .HasColumnType("int");
+
+                    b.Property<string>("WeightType")
+                        .HasColumnType("longtext");
 
                     b.HasKey("Id");
 
