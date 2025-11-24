@@ -355,6 +355,12 @@ namespace healthspan_api.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<string>("GoogleRefreshToken")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("GoogleSubject")
+                        .HasColumnType("longtext");
+
                     b.Property<int?>("Height")
                         .HasColumnType("int");
 
@@ -383,6 +389,9 @@ namespace healthspan_api.Migrations
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("PictureUrl")
+                        .HasColumnType("longtext");
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("longtext");
