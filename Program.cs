@@ -1,6 +1,12 @@
+using System;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
+using healthspan_api.Options;
 using healthspan_api.Persistence.Repositories;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,18 +14,74 @@ using Microsoft.OpenApi.Models;
 using Scalar.AspNetCore;
 using Services;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using System.Text.Json;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
 var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
-builder.Services.AddAuthentication()
-    .AddBearerToken(IdentityConstants.BearerScheme);
-// .AddGoogle(options =>
-//  {
-//      options.ClientId = builder.Configuration.GetSection("GoogleClientId").Value;
-//      options.ClientSecret = builder.Configuration.GetSection("GoogleClientSecret").Value;
-//  });
+var googleSection = builder.Configuration.GetSection("Authentication:Google");
+
+builder.Services.Configure<GoogleAuthSettings>(googleSection);
+builder.Services.AddMemoryCache();
+
+var authenticationBuilder = builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = IdentityConstants.BearerScheme;
+    options.DefaultAuthenticateScheme = IdentityConstants.BearerScheme;
+    options.DefaultChallengeScheme = IdentityConstants.BearerScheme;
+});
+
+authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
+authenticationBuilder.AddGoogle(options =>
+{
+    options.ClientId = googleSection["ClientId"] ?? string.Empty;
+    options.ClientSecret = googleSection["ClientSecret"] ?? string.Empty;
+
+    var callbackUri = googleSection["CallbackUri"];
+    if (!string.IsNullOrWhiteSpace(callbackUri) && Uri.TryCreate(callbackUri, UriKind.Absolute, out var parsedCallback))
+    {
+        options.CallbackPath = parsedCallback.AbsolutePath;
+    }
+    else
+    {
+        options.CallbackPath = "/auth/google/callback";
+    }
+
+    options.SignInScheme = IdentityConstants.ExternalScheme;
+    options.UsePkce = true;
+    options.SaveTokens = true;
+    options.AccessType = "offline";
+    options.Scope.Add("openid");
+    options.Scope.Add("profile");
+    options.Scope.Add("email");
+    options.Events.OnRedirectToAuthorizationEndpoint = context =>
+    {
+        var separator = context.RedirectUri.Contains('?') ? "&" : "?";
+        context.Response.Redirect($"{context.RedirectUri}{separator}prompt=consent");
+        return Task.CompletedTask;
+    };
+    options.Events.OnCreatingTicket = context =>
+    {
+        if (context.User.TryGetProperty("picture", out var pictureElement))
+        {
+            var picture = pictureElement.GetString();
+            if (!string.IsNullOrWhiteSpace(picture))
+            {
+                context.Identity?.AddClaim(new Claim("picture", picture));
+            }
+        }
+
+        if (context.User.TryGetProperty("email_verified", out var emailVerifiedElement) &&
+            (emailVerifiedElement.ValueKind == JsonValueKind.True ||
+             emailVerifiedElement.ValueKind == JsonValueKind.False))
+        {
+            context.Identity?.AddClaim(new Claim("email_verified", emailVerifiedElement.GetBoolean().ToString()));
+        }
+
+        return Task.CompletedTask;
+    };
+});
 builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -36,6 +98,7 @@ builder.Services.AddDbContext<MainDbContext>(options =>
 builder.Services.AddIdentityCore<User>()
     .AddRoles<Role>()
     .AddEntityFrameworkStores<MainDbContext>()
+    .AddSignInManager()
     .AddApiEndpoints();
 builder.Services.AddCors(options =>
     {
@@ -59,6 +122,12 @@ builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<CsvService>();
+builder.Services.AddScoped<GoogleAuthService>();
+builder.Services.AddScoped<GoogleTokenValidator>();
+builder.Services.AddScoped<GoogleReturnUrlResolver>();
+builder.Services.AddScoped<LocalTokenService>();
+builder.Services.AddScoped<IGoogleRefreshTokenProtector, GoogleRefreshTokenProtector>();
+builder.Services.AddHttpClient<GoogleOAuthClient>();
 builder.Services.AddMediatR(typeof(Program).Assembly);
 
 // Comment out OpenAPI/Scalar
@@ -124,15 +193,39 @@ app.MapControllers();
 //     });
 // }
 
-app.MapPost("/Logout", async (SignInManager<User> signInManager,
-    [FromBody] object empty) =>
+app.MapPost("/Logout", async (
+    SignInManager<User> signInManager,
+    UserManager<User> userManager,
+    IHttpContextAccessor httpContextAccessor,
+    GoogleOAuthClient googleOAuthClient,
+    IGoogleRefreshTokenProtector refreshTokenProtector,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
 {
-    if (empty != null)
+    var userId = httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!string.IsNullOrEmpty(userId))
     {
-        await signInManager.SignOutAsync();
-        return Results.Ok();
+        var user = await userManager.FindByIdAsync(userId);
+        if (user?.GoogleRefreshToken != null)
+        {
+            var refreshToken = refreshTokenProtector.Unprotect(user.GoogleRefreshToken);
+
+            if (!string.IsNullOrWhiteSpace(refreshToken))
+            {
+                await googleOAuthClient.RevokeRefreshTokenAsync(refreshToken, cancellationToken);
+            }
+
+            user.GoogleRefreshToken = null;
+            var updateResult = await userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+            {
+                logger.LogWarning("Failed to persist Google refresh token removal for user {UserId}", userId);
+            }
+        }
     }
-    return Results.Unauthorized();
+
+    await signInManager.SignOutAsync();
+    return Results.Ok();
 })
 .WithOpenApi()
 .RequireAuthorization();
