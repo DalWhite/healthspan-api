@@ -20,9 +20,8 @@ using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
-var googleSection = builder.Configuration.GetSection("Authentication:Google");
-
-builder.Services.Configure<GoogleAuthSettings>(googleSection);
+builder.Services.Configure<GoogleAuthSettings>(builder.Configuration);
+var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
@@ -35,10 +34,10 @@ var authenticationBuilder = builder.Services.AddAuthentication(options =>
 authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
 authenticationBuilder.AddGoogle(options =>
 {
-    options.ClientId = googleSection["ClientId"] ?? string.Empty;
-    options.ClientSecret = googleSection["ClientSecret"] ?? string.Empty;
+    options.ClientId = googleSettings.ClientId;
+    options.ClientSecret = googleSettings.ClientSecret;
 
-    var callbackUri = googleSection["CallbackUri"];
+    var callbackUri = googleSettings.CallbackUri;
     if (!string.IsNullOrWhiteSpace(callbackUri) && Uri.TryCreate(callbackUri, UriKind.Absolute, out var parsedCallback))
     {
         options.CallbackPath = parsedCallback.AbsolutePath;

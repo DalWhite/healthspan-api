@@ -12,7 +12,7 @@ TODOS:
 
 ## Google Sign-In wiring
 
-- Configure secrets under `Authentication:Google` (`ClientId`, `ClientSecret`, `CallbackUri`, `DefaultReturnUrl`, optional `AllowedReturnUrls`) via `appsettings.*` or `dotnet user-secrets`.
+- Configure secrets via the flat keys `GoogleClientId`, `GoogleClientSecret`, `GoogleCallbackUri`, `GoogleDefaultReturnUrl`, and optional `GoogleAllowedReturnUrls` (array) in `appsettings.*`, user-secrets, or environment variables.
 - `POST /auth/google/exchange` accepts `{ "idToken": "<Google ID token>" }`, validates with Google, provisions the user locally, then returns the same payload as `/login` (`tokenType`, `accessToken`, `expiresIn`, `refreshToken`).
 - `GET /auth/google/challenge?returnUrl=` starts the PKCE authorization code flow. After Google redirects back to `/auth/google/callback` the API issues local tokens, then redirects to the sanitized return URL with `tokenType`, `accessToken`, `refreshToken`, `expiresIn` query parameters.
 - `POST /refresh` (existing Identity endpoint) works for Google sessions because they use the same bearer-token issuance path as email/password accounts.
