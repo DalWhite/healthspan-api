@@ -21,4 +21,11 @@ public class MuscleRepository
         return await _context.Muscles
             .ToListAsync();
     }
+
+    public async Task<Muscle> GetByNameAsync(string name)
+    {
+        return await _context.Muscles
+            .Where(m => m.Name.ToLower() == name.ToLower())
+            .FirstOrDefaultAsync();
+    }
 }

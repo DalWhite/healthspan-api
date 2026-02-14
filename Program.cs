@@ -112,6 +112,7 @@ builder.Services.AddCors(options =>
 
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<CurrentUserProvider>();
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<MuscleRepository>();

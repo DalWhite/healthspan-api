@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
+
 public class ExerciseType
 {
     public int Id { get; set; }
@@ -13,4 +16,11 @@ public class ExerciseType
     public List<User> FavoritedUsers { get; set; }
     public List<WorkoutTemplate> WorkoutTemplates { get; set; }
     public string WeightType { get; set; }
+    
+    /// <summary>
+    /// Tags stored as JSON (equipment, mechanic, level, force, type)
+    /// Serialized as a JSON string in the database
+    /// </summary>
+    [Column(TypeName = "longtext")]
+    public List<ExerciseTag> Tags { get; set; } = new();
 }
