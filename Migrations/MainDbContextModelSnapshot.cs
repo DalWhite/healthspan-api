@@ -92,6 +92,9 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("SecondaryMuscleId")
                         .HasColumnType("int");
 
+                    b.Property<string>("Tags")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("WeightType")
                         .HasColumnType("longtext");
 

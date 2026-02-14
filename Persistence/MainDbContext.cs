@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Services;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using System.Text.Json;
 
 public class MainDbContext : IdentityDbContext<User, Role, string>
 {
@@ -29,6 +30,19 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         
         builder.Entity<Muscle>()
             .Property(e => e.MuscleGroup).HasConversion(v => v.ToString(), v => (MuscleGroup)Enum.Parse(typeof(MuscleGroup), v));
+
+        // Configure Tags property with JSON serialization
+        builder.Entity<ExerciseType>()
+            .Property(e => e.Tags)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
+                v => JsonSerializer.Deserialize<List<ExerciseTag>>(v, (JsonSerializerOptions)null) ?? new List<ExerciseTag>()
+            )
+            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<ExerciseTag>>(
+                (c1, c2) => c1.SequenceEqual(c2),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()
+            ));
 
         base.OnModelCreating(builder);
     }
