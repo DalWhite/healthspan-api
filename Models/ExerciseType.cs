@@ -23,4 +23,22 @@ public class ExerciseType
     /// </summary>
     [Column(TypeName = "longtext")]
     public List<ExerciseTag> Tags { get; set; } = new();
+    
+    /// <summary>
+    /// Parent exercise type for variations
+    /// Null for main exercises, contains the ID of the parent for variations
+    /// Example: "Situps" is main, "Situps - Kettlebell" has ParentExerciseTypeId = SitupsId
+    /// </summary>
+    public int? ParentExerciseTypeId { get; set; }
+    
+    /// <summary>
+    /// Navigation property to the parent exercise
+    /// </summary>
+    [ForeignKey(nameof(ParentExerciseTypeId))]
+    public ExerciseType ParentExerciseType { get; set; }
+    
+    /// <summary>
+    /// Navigation property for variations/child exercises
+    /// </summary>
+    public List<ExerciseType> Variations { get; set; } = new();
 }

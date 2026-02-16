@@ -31,6 +31,13 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         builder.Entity<Muscle>()
             .Property(e => e.MuscleGroup).HasConversion(v => v.ToString(), v => (MuscleGroup)Enum.Parse(typeof(MuscleGroup), v));
 
+        // Configure ExerciseType parent-child relationship
+        builder.Entity<ExerciseType>()
+            .HasOne(e => e.ParentExerciseType)
+            .WithMany(e => e.Variations)
+            .HasForeignKey(e => e.ParentExerciseTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Configure Tags property with JSON serialization
         builder.Entity<ExerciseType>()
             .Property(e => e.Tags)
