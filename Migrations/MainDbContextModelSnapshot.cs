@@ -86,6 +86,9 @@ namespace healthspan_api.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("longtext");
 
+                    b.Property<int?>("ParentExerciseTypeId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("PrimaryMuscleId")
                         .HasColumnType("int");
 
@@ -99,6 +102,8 @@ namespace healthspan_api.Migrations
                         .HasColumnType("longtext");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentExerciseTypeId");
 
                     b.HasIndex("PrimaryMuscleId");
 
@@ -492,6 +497,11 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("ExerciseType", b =>
                 {
+                    b.HasOne("ExerciseType", "ParentExerciseType")
+                        .WithMany("Variations")
+                        .HasForeignKey("ParentExerciseTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Muscle", "PrimaryMuscle")
                         .WithMany()
                         .HasForeignKey("PrimaryMuscleId");
@@ -499,6 +509,8 @@ namespace healthspan_api.Migrations
                     b.HasOne("Muscle", "SecondaryMuscle")
                         .WithMany()
                         .HasForeignKey("SecondaryMuscleId");
+
+                    b.Navigation("ParentExerciseType");
 
                     b.Navigation("PrimaryMuscle");
 
@@ -630,6 +642,11 @@ namespace healthspan_api.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ExerciseType", b =>
+                {
+                    b.Navigation("Variations");
                 });
 
             modelBuilder.Entity("Routine", b =>

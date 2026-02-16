@@ -22,11 +22,17 @@ public class ExerciseTypesRepository
     }
     public ExerciseType GetExerciseType(int Id)
     {
-        return _context.ExerciseTypes.Include(et => et.FavoritedUsers).FirstOrDefault(et => et.Id == Id);
+        return _context.ExerciseTypes
+            .Include(et => et.FavoritedUsers)
+            .Include(et => et.Variations)
+            .FirstOrDefault(et => et.Id == Id);
     }
     public List<ExerciseType> GetExerciseTypes()
     {
-        return _context.ExerciseTypes.Include(et => et.FavoritedUsers).ToList();
+        return _context.ExerciseTypes
+            .Include(et => et.FavoritedUsers)
+            .Include(et => et.Variations)
+            .ToList();
     }
     
     /// <summary>
@@ -111,6 +117,41 @@ public class ExerciseTypesRepository
     {
         return await _context.ExerciseTypes
             .FirstOrDefaultAsync(et => et.Name.ToLower() == name.ToLower());
+    }
+    
+    /// <summary>
+    /// Gets only main exercises (exercises without a parent)
+    /// </summary>
+    public List<ExerciseType> GetMainExercises()
+    {
+        return _context.ExerciseTypes
+            .Where(et => et.ParentExerciseTypeId == null)
+            .Include(et => et.FavoritedUsers)
+            .Include(et => et.Variations)
+            .ToList();
+    }
+    
+    /// <summary>
+    /// Gets variations for a specific main exercise
+    /// </summary>
+    public List<ExerciseType> GetVariationsByParentId(int parentExerciseTypeId)
+    {
+        return _context.ExerciseTypes
+            .Where(et => et.ParentExerciseTypeId == parentExerciseTypeId)
+            .Include(et => et.FavoritedUsers)
+            .ToList();
+    }
+    
+    /// <summary>
+    /// Gets a main exercise with all its variations
+    /// </summary>
+    public async Task<ExerciseType> GetMainExerciseWithVariationsAsync(int mainExerciseId)
+    {
+        return await _context.ExerciseTypes
+            .Where(et => et.Id == mainExerciseId && et.ParentExerciseTypeId == null)
+            .Include(et => et.Variations)
+            .Include(et => et.FavoritedUsers)
+            .FirstOrDefaultAsync();
     }
     
     public void UpdateExerciseType(ExerciseType exerciseType)
