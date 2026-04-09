@@ -51,19 +51,31 @@ public class BloodAnalyticsService
         return _bloodTestsRepository.GetPendingReviewBloodTests(userId);
     }
 
-    public Guid CreateManualBloodTest(string userId, DateTime testDate, string? labName, List<ManualBloodTestMarkerInput> markers)
+    public async Task<Guid> CreateManualBloodTestAsync(string userId, DateTime testDate, string? labName, List<ManualBloodTestMarkerInput> markers)
     {
+        var profile = _context.HealthProfiles.IgnoreQueryFilters().FirstOrDefault(item => item.UserId == userId);
+        var allDefinitions = _context.HealthMetricDefinitions.IgnoreQueryFilters().Include(item => item.ReferenceRanges).ToList();
+
         var bloodTest = new BloodTest
         {
             UserId = userId,
             TestDate = testDate,
             LabName = labName,
             ProcessingStatus = markers.Count == 0 ? BloodTestProcessingStatus.PendingReview : BloodTestProcessingStatus.Processed,
-            MarkerResults = markers.Select(marker => BuildMarkerResult(userId, marker.Name, marker.Name, marker.Unit, marker.Value, marker.Value?.ToString(), 1)).ToList()
+            MarkerResults = markers.Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.Name, marker.Unit, marker.Value, marker.Value?.ToString(), 1)).ToList()
         };
 
         var id = _bloodTestsRepository.AddBloodTest(bloodTest);
-        _ = _mediator.Publish(new BloodTestProcessedEvent(id, userId));
+
+        try
+        {
+            await _mediator.Publish(new BloodTestProcessedEvent(id, userId));
+        }
+        catch (Exception)
+        {
+            // Non-critical: event handlers may fail without impacting the created blood test
+        }
+
         return id;
     }
 
@@ -115,10 +127,13 @@ public class BloodAnalyticsService
             CandidateMarkers = extraction.Markers
         }, cancellationToken);
 
+        var profile = _context.HealthProfiles.IgnoreQueryFilters().FirstOrDefault(item => item.UserId == userId);
+        var allDefinitions = _context.HealthMetricDefinitions.IgnoreQueryFilters().Include(item => item.ReferenceRanges).ToList();
+
         var selectedMarkers = SelectMarkers(extraction.Markers, normalization);
         var curatedMarkers = CurateMarkerCandidates(selectedMarkers);
         var extractedMarkers = curatedMarkers
-            .Select(marker => BuildMarkerResult(userId, marker.Name, marker.OriginalName ?? marker.Name, marker.Unit, marker.Value, marker.ValueText, marker.Confidence))
+            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.OriginalName ?? marker.Name, marker.Unit, marker.Value, marker.ValueText, marker.Confidence))
             .ToList();
 
         var bloodTest = _context.BloodTests
@@ -177,6 +192,9 @@ public class BloodAnalyticsService
             return false;
         }
 
+        var profile = _context.HealthProfiles.IgnoreQueryFilters().FirstOrDefault(item => item.UserId == userId);
+        var allDefinitions = _context.HealthMetricDefinitions.IgnoreQueryFilters().Include(item => item.ReferenceRanges).ToList();
+
         bloodTest.TestDate = review.TestDate;
         bloodTest.LabName = review.LabName;
         bloodTest.UpdatedAtUtc = DateTime.UtcNow;
@@ -185,7 +203,7 @@ public class BloodAnalyticsService
 
         _context.BloodTestMarkerResults.RemoveRange(bloodTest.MarkerResults);
         bloodTest.MarkerResults = review.Markers
-            .Select(marker => BuildMarkerResult(userId, marker.Name, marker.Name, marker.Unit, marker.Value, marker.RawValueText, marker.Confidence))
+            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.Name, marker.Unit, marker.Value, marker.RawValueText, marker.Confidence))
             .ToList();
 
         _context.SaveChanges();
@@ -463,6 +481,7 @@ public class BloodAnalyticsService
             .IgnoreQueryFilters()
             .Include(result => result.BloodTest)
             .Where(result => result.BloodTest.UserId == userId)
+            .Where(result => result.BloodTest.ProcessingStatus == BloodTestProcessingStatus.Processed)
             .Where(result => result.MetricKey == normalizedMetricKey)
             .Where(result => result.NormalizedValue != null)
             .AsQueryable();
@@ -495,6 +514,7 @@ public class BloodAnalyticsService
             .IgnoreQueryFilters()
             .Include(result => result.BloodTest)
             .Where(result => result.BloodTest.UserId == userId)
+            .Where(result => result.BloodTest.ProcessingStatus == BloodTestProcessingStatus.Processed)
             .AsEnumerable()
             .GroupBy(result => result.MetricKey)
             .Select(group => group.OrderByDescending(result => result.BloodTest.TestDate).First())
@@ -513,15 +533,11 @@ public class BloodAnalyticsService
             .ToList();
     }
 
-    private BloodTestMarkerResult BuildMarkerResult(string userId, string displayName, string rawMarkerName, string? unit, decimal? value, string? rawValueText, double? confidence)
+    private static BloodTestMarkerResult BuildMarkerResult(HealthProfile? profile, List<HealthMetricDefinition> allDefinitions, string displayName, string rawMarkerName, string? unit, decimal? value, string? rawValueText, double? confidence)
     {
         var normalizedUnit = string.IsNullOrWhiteSpace(unit) ? null : unit.Trim();
         var metricKey = NormalizeMetricKey(displayName);
-        var profile = _context.HealthProfiles.IgnoreQueryFilters().FirstOrDefault(item => item.UserId == userId);
-        var metricDefinition = _context.HealthMetricDefinitions
-            .IgnoreQueryFilters()
-            .Include(item => item.ReferenceRanges)
-            .FirstOrDefault(item => item.Key == metricKey);
+        var metricDefinition = allDefinitions.FirstOrDefault(item => item.Key == metricKey);
 
         var referenceRange = ResolveReferenceRange(metricDefinition, profile, normalizedUnit);
         var status = ClassifyValue(value, referenceRange);
@@ -577,7 +593,7 @@ public class BloodAnalyticsService
 
         var age = profile?.DateOfBirth is null
             ? (int?)null
-            : Math.Max(0, DateTime.UtcNow.Year - profile.DateOfBirth.Value.Year);
+            : CalculateAge(profile.DateOfBirth.Value, DateOnly.FromDateTime(DateTime.UtcNow));
 
         return metricDefinition.ReferenceRanges
             .Where(range => string.IsNullOrWhiteSpace(unit) || range.Unit == unit)
@@ -587,6 +603,17 @@ public class BloodAnalyticsService
             .OrderBy(range => range.BiologicalSex.HasValue ? 0 : 1)
             .ThenBy(range => range.MinAge.HasValue ? 0 : 1)
             .FirstOrDefault();
+    }
+
+    private static int CalculateAge(DateOnly dateOfBirth, DateOnly asOf)
+    {
+        var age = asOf.Year - dateOfBirth.Year;
+        if (asOf < dateOfBirth.AddYears(age))
+        {
+            age--;
+        }
+
+        return Math.Max(0, age);
     }
 
     public static string NormalizeMetricKey(string value)

@@ -15,7 +15,7 @@ public class HealthDashboardService
         var latestBloodTest = _context.BloodTests
             .IgnoreQueryFilters()
             .Include(test => test.MarkerResults)
-            .Where(test => test.UserId == userId)
+            .Where(test => test.UserId == userId && test.ProcessingStatus == BloodTestProcessingStatus.Processed)
             .OrderByDescending(test => test.TestDate)
             .FirstOrDefault();
 

@@ -78,12 +78,12 @@ public class BloodTestsController : ControllerBase
     }
 
     [HttpPost("manual")]
-    public IActionResult AddManualBloodTest(AddBloodTestResource resource)
+    public async Task<IActionResult> AddManualBloodTest(AddBloodTestResource resource)
     {
         try
         {
             var userId = _currentUserProvider.GetCurrentUserId();
-            var id = _bloodAnalyticsService.CreateManualBloodTest(
+            var id = await _bloodAnalyticsService.CreateManualBloodTestAsync(
                 userId,
                 resource.TestDate,
                 resource.LabName,
@@ -110,6 +110,12 @@ public class BloodTestsController : ControllerBase
             if (file is null || file.Length == 0)
             {
                 return BadRequest("No file uploaded.");
+            }
+
+            const long maxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
+            if (file.Length > maxFileSizeBytes)
+            {
+                return BadRequest("File size exceeds the 20 MB limit.");
             }
 
             var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp" };
