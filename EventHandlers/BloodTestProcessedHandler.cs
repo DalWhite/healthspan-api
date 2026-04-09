@@ -1,29 +1,21 @@
 using healthspan_api.Events;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace healthspan_api.EventHandlers;
 
 public class BloodTestProcessedHandler : INotificationHandler<BloodTestProcessedEvent>
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<BloodTestProcessedHandler> _logger;
 
-    public BloodTestProcessedHandler(IServiceProvider serviceProvider)
+    public BloodTestProcessedHandler(ILogger<BloodTestProcessedHandler> logger)
     {
-        _serviceProvider = serviceProvider;
+        _logger = logger;
     }
 
     public Task Handle(BloodTestProcessedEvent notification, CancellationToken cancellationToken)
     {
-        using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<MainDbContext>();
-        var bloodTest = dbContext.BloodTests.FirstOrDefault(test => test.Id == notification.BloodTestId && test.UserId == notification.UserId);
-        if (bloodTest is null)
-        {
-            return Task.CompletedTask;
-        }
-
-        bloodTest.UpdatedAtUtc = DateTime.UtcNow;
-        dbContext.SaveChanges();
+        _logger.LogInformation("Blood test {BloodTestId} processed for user {UserId}", notification.BloodTestId, notification.UserId);
         return Task.CompletedTask;
     }
 }
