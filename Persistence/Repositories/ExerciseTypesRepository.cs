@@ -178,11 +178,15 @@ public class ExerciseTypesRepository
         {
             existingEntity.SecondaryMuscleId = exerciseType.SecondaryMuscleId;
         }
+        if (exerciseType.ParentExerciseTypeId != existingEntity.ParentExerciseTypeId)
+        {
+            existingEntity.ParentExerciseTypeId = exerciseType.ParentExerciseTypeId;
+        }
         if (exerciseType.WeightType is not null)
         {
             existingEntity.WeightType = exerciseType.WeightType;
         }
-        if (exerciseType.Tags?.Count > 0)
+        if (exerciseType.Tags is not null)
         {
             existingEntity.Tags = exerciseType.Tags;
         }
@@ -211,7 +215,11 @@ public class ExerciseTypesRepository
         {
             existingEntity.PrimaryMuscleId = exerciseType.PrimaryMuscleId;
         }
-        if (exerciseType.Tags?.Count > 0)
+        if (exerciseType.ParentExerciseTypeId != existingEntity.ParentExerciseTypeId)
+        {
+            existingEntity.ParentExerciseTypeId = exerciseType.ParentExerciseTypeId;
+        }
+        if (exerciseType.Tags is not null)
         {
             existingEntity.Tags = exerciseType.Tags;
         }

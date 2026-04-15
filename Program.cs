@@ -21,6 +21,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
 builder.Services.Configure<GoogleAuthSettings>(builder.Configuration);
+builder.Services.Configure<AzureBlobStorageSettings>(builder.Configuration);
+builder.Services.Configure<FileSystemDocumentStorageSettings>(builder.Configuration);
+builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configuration);
+builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -120,14 +124,36 @@ builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
+builder.Services.AddScoped<BloodTestsRepository>();
+builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
+builder.Services.AddScoped<BloodAnalyticsService>();
+builder.Services.AddSingleton<BloodTestProcessingChannel>();
+builder.Services.AddHostedService<BloodTestProcessingWorker>();
+builder.Services.AddScoped<GalpinAssessmentCatalogService>();
+builder.Services.AddScoped<GalpinAssessmentService>();
+builder.Services.AddScoped<HealthAccessService>();
+builder.Services.AddScoped<HealthDashboardService>();
+builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
+builder.Services.AddScoped<FileSystemBloodTestDocumentStorage>();
+builder.Services.AddScoped<IBloodTestDocumentStorage, HybridBloodTestDocumentStorage>();
 builder.Services.AddScoped<CsvService>();
 builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<GoogleTokenValidator>();
 builder.Services.AddScoped<GoogleReturnUrlResolver>();
 builder.Services.AddScoped<LocalTokenService>();
 builder.Services.AddScoped<IGoogleRefreshTokenProtector, GoogleRefreshTokenProtector>();
+builder.Services.AddScoped<IOcrExtractionProvider, AzureDocumentIntelligenceOcrProvider>();
+builder.Services.AddScoped<NoOpMarkerNormalizationProvider>();
+builder.Services.AddScoped<ConfiguredMarkerNormalizationProvider>();
+builder.Services.AddScoped<IMarkerNormalizationProvider, ConfiguredMarkerNormalizationProvider>();
 builder.Services.AddHttpClient<GoogleOAuthClient>();
+builder.Services.AddHttpClient<OpenRouterMarkerNormalizationProvider>((serviceProvider, client) =>
+{
+    var settings = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LlmMarkerNormalizationSettings>>().Value;
+    client.BaseAddress = new Uri(settings.BaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(30, settings.TimeoutSeconds));
+});
 builder.Services.AddMediatR(typeof(Program).Assembly);
 
 // Comment out OpenAPI/Scalar
@@ -231,3 +257,6 @@ app.MapPost("/Logout", async (
 .RequireAuthorization();
 
 app.Run();
+
+// Make the implicit Program class public so test projects can access it
+public partial class Program { }
