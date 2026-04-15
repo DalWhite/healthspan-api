@@ -21,4 +21,6 @@ public class OcrMarkerResult
     public string? ValueText { get; set; }
     public decimal? Value { get; set; }
     public double? Confidence { get; set; }
+    public decimal? ReferenceMinValue { get; set; }
+    public decimal? ReferenceMaxValue { get; set; }
 }

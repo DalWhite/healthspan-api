@@ -105,21 +105,21 @@ public class ExerciseTypesController : ControllerBase
             var existingExerciseType = _exerciseTypeRepository.GetExerciseType(domainExerciseType.Id);
             if (existingExerciseType is not null)
             {
-                if(exerciseTypeResource.IsFavourite)
+                domainExerciseType.FavoritedUsers = existingExerciseType.FavoritedUsers ?? [];
+
+                var userId = _userProvider.GetCurrentUserId();
+                var existingFavourite = domainExerciseType.FavoritedUsers.FirstOrDefault(user => user.Id == userId);
+
+                if (exerciseTypeResource.IsFavourite && existingFavourite is null)
                 {
-                    var userId = _userProvider.GetCurrentUserId();
                     var user = _usersRepository.GetUser(userId);
-                    if(domainExerciseType.FavoritedUsers != null)
-                    {
-                        domainExerciseType.FavoritedUsers.Add(user);
-                    }
-                    else
-                    {
-                        domainExerciseType.FavoritedUsers = [
-                            user
-                        ];
-                    }
+                    domainExerciseType.FavoritedUsers.Add(user);
                 }
+                else if (!exerciseTypeResource.IsFavourite && existingFavourite is not null)
+                {
+                    domainExerciseType.FavoritedUsers.Remove(existingFavourite);
+                }
+
                 _exerciseTypeRepository.UpdateExerciseType(domainExerciseType);
                 return Ok("ExerciseType updated successfully");
             }

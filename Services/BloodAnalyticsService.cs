@@ -15,7 +15,11 @@ public class BloodAnalyticsService
         "audiometr", "electrocard", "agudeza visual", "vision", "visión", "aumento", "anamnesis", "exploración", "exploracion",
         "david", "alonso", "blan", "dni", "pasaporte", "nombre", "apellidos", "sexo", "edad", "telefono", "teléfono",
         "oído", "oido", "campo", "pérdida", "perdida", "klockhoff", "sedimento", "sinusal", "ritmo", "indicio",
-        "romberg", "eje eléctrico", "eje electrico"
+        "romberg", "eje eléctrico", "eje electrico",
+        "página", "pagina", "muestra", "servicio", "origen", "adeslas", "averroes", "teléf", "telef",
+        "dr./dra", "dr/dra", "certificad", "norma une", "iso 9001", "applus", "enac",
+        "avda", "avenida", "nuevo mundo", "estudios analíticos", "estudios analiticos",
+        "resultado %", "valores de"
     };
     private readonly BloodTestsRepository _bloodTestsRepository;
     private readonly MainDbContext _context;
@@ -133,7 +137,7 @@ public class BloodAnalyticsService
         var selectedMarkers = SelectMarkers(extraction.Markers, normalization);
         var curatedMarkers = CurateMarkerCandidates(selectedMarkers);
         var extractedMarkers = curatedMarkers
-            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.OriginalName ?? marker.Name, marker.Unit, marker.Value, marker.ValueText, marker.Confidence))
+            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.OriginalName ?? marker.Name, marker.Unit, marker.Value, marker.ValueText, marker.Confidence, marker.ReferenceMinValue, marker.ReferenceMaxValue))
             .ToList();
 
         var bloodTest = _context.BloodTests
@@ -212,9 +216,46 @@ public class BloodAnalyticsService
 
     private static List<OcrMarkerResult> SelectMarkers(List<OcrMarkerResult> ocrMarkers, MarkerNormalizationResult normalization)
     {
-        return normalization.Success && normalization.Markers.Count > 0
-            ? normalization.Markers
-            : ocrMarkers;
+        if (!normalization.Success || normalization.Markers.Count == 0)
+        {
+            return ocrMarkers;
+        }
+
+        var ocrLookup = ocrMarkers
+            .Where(m => m.ReferenceMinValue.HasValue || m.ReferenceMaxValue.HasValue || m.Confidence.HasValue)
+            .GroupBy(m => m.Name.Trim().ToLowerInvariant())
+            .ToDictionary(
+                g => g.Key,
+                g => g.First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var marker in normalization.Markers)
+        {
+            var lookupKey = (marker.OriginalName ?? marker.Name).Trim().ToLowerInvariant();
+            if (!ocrLookup.TryGetValue(lookupKey, out var ocrMarker))
+            {
+                continue;
+            }
+
+            if (!marker.ReferenceMinValue.HasValue && ocrMarker.ReferenceMinValue.HasValue)
+            {
+                marker.ReferenceMinValue = ocrMarker.ReferenceMinValue;
+            }
+
+            if (!marker.ReferenceMaxValue.HasValue && ocrMarker.ReferenceMaxValue.HasValue)
+            {
+                marker.ReferenceMaxValue = ocrMarker.ReferenceMaxValue;
+            }
+
+            if (ocrMarker.Confidence.HasValue)
+            {
+                marker.Confidence = marker.Confidence.HasValue
+                    ? Math.Min(marker.Confidence.Value, ocrMarker.Confidence.Value)
+                    : ocrMarker.Confidence;
+            }
+        }
+
+        return normalization.Markers;
     }
 
     private static List<OcrMarkerResult> CurateMarkerCandidates(List<OcrMarkerResult> markers)
@@ -533,14 +574,24 @@ public class BloodAnalyticsService
             .ToList();
     }
 
-    private static BloodTestMarkerResult BuildMarkerResult(HealthProfile? profile, List<HealthMetricDefinition> allDefinitions, string displayName, string rawMarkerName, string? unit, decimal? value, string? rawValueText, double? confidence)
+    private static BloodTestMarkerResult BuildMarkerResult(HealthProfile? profile, List<HealthMetricDefinition> allDefinitions, string displayName, string rawMarkerName, string? unit, decimal? value, string? rawValueText, double? confidence, decimal? ocrReferenceMinValue = null, decimal? ocrReferenceMaxValue = null)
     {
         var normalizedUnit = string.IsNullOrWhiteSpace(unit) ? null : unit.Trim();
         var metricKey = NormalizeMetricKey(displayName);
         var metricDefinition = allDefinitions.FirstOrDefault(item => item.Key == metricKey);
 
         var referenceRange = ResolveReferenceRange(metricDefinition, profile, normalizedUnit);
+        if (referenceRange is null && (ocrReferenceMinValue.HasValue || ocrReferenceMaxValue.HasValue))
+        {
+            referenceRange = new ReferenceRange { MinValue = ocrReferenceMinValue, MaxValue = ocrReferenceMaxValue };
+        }
+
         var status = ClassifyValue(value, referenceRange);
+
+        if (confidence.HasValue && confidence.Value < 0.8 && status != MarkerStatus.RequiresReview)
+        {
+            status = MarkerStatus.RequiresReview;
+        }
 
         return new BloodTestMarkerResult
         {
