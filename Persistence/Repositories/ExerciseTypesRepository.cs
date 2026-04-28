@@ -3,6 +3,18 @@ using Microsoft.EntityFrameworkCore;
 public class ExerciseTypesRepository
 {
     private readonly MainDbContext _context;
+    private IQueryable<ExerciseType> QueryWithRelations()
+        => _context.ExerciseTypes
+            .AsSplitQuery()
+            .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
+                .ThenInclude(assignment => assignment.Muscle)
+            .Include(et => et.Variations)
+                .ThenInclude(variation => variation.MuscleAssignments)
+                    .ThenInclude(assignment => assignment.Muscle)
+            .Include(et => et.Variations)
+                .ThenInclude(variation => variation.FavoritedUsers);
+
     public ExerciseTypesRepository(MainDbContext context)
     {
         _context = context;
@@ -22,16 +34,12 @@ public class ExerciseTypesRepository
     }
     public ExerciseType GetExerciseType(int Id)
     {
-        return _context.ExerciseTypes
-            .Include(et => et.FavoritedUsers)
-            .Include(et => et.Variations)
+        return QueryWithRelations()
             .FirstOrDefault(et => et.Id == Id);
     }
     public List<ExerciseType> GetExerciseTypes()
     {
-        return _context.ExerciseTypes
-            .Include(et => et.FavoritedUsers)
-            .Include(et => et.Variations)
+        return QueryWithRelations()
             .ToList();
     }
     
@@ -45,6 +53,7 @@ public class ExerciseTypesRepository
                 t.Category == "equipment" && 
                 t.Name.ToLower().Contains(equipment.ToLower())))
             .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
             .ToList();
     }
     
@@ -58,6 +67,7 @@ public class ExerciseTypesRepository
                 t.Category == "level" && 
                 t.Name.ToLower() == level.ToLower()))
             .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
             .ToList();
     }
     
@@ -71,6 +81,7 @@ public class ExerciseTypesRepository
                 t.Category == "mechanic" && 
                 t.Name.ToLower() == mechanic.ToLower()))
             .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
             .ToList();
     }
     
@@ -79,7 +90,10 @@ public class ExerciseTypesRepository
     /// </summary>
     public List<ExerciseType> GetExerciseTypesFiltered(string searchTerm = null, string equipment = null, string level = null)
     {
-        var query = _context.ExerciseTypes.Include(et => et.FavoritedUsers).AsQueryable();
+        var query = _context.ExerciseTypes
+            .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
+            .AsQueryable();
         
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -110,12 +124,13 @@ public class ExerciseTypesRepository
     {
         return _context.ExerciseTypes
             .Where(et => exerciseTypeIds.Contains(et.Id))
+            .Include(et => et.MuscleAssignments)
             .ToList();
     }
     
     public async Task<ExerciseType> GetByNameAsync(string name)
     {
-        return await _context.ExerciseTypes
+        return await QueryWithRelations()
             .FirstOrDefaultAsync(et => et.Name.ToLower() == name.ToLower());
     }
     
@@ -127,7 +142,9 @@ public class ExerciseTypesRepository
         return _context.ExerciseTypes
             .Where(et => et.ParentExerciseTypeId == null)
             .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
             .Include(et => et.Variations)
+                .ThenInclude(variation => variation.MuscleAssignments)
             .ToList();
     }
     
@@ -139,6 +156,7 @@ public class ExerciseTypesRepository
         return _context.ExerciseTypes
             .Where(et => et.ParentExerciseTypeId == parentExerciseTypeId)
             .Include(et => et.FavoritedUsers)
+            .Include(et => et.MuscleAssignments)
             .ToList();
     }
     
@@ -150,6 +168,8 @@ public class ExerciseTypesRepository
         return await _context.ExerciseTypes
             .Where(et => et.Id == mainExerciseId && et.ParentExerciseTypeId == null)
             .Include(et => et.Variations)
+                .ThenInclude(variation => variation.MuscleAssignments)
+            .Include(et => et.MuscleAssignments)
             .Include(et => et.FavoritedUsers)
             .FirstOrDefaultAsync();
     }
@@ -170,14 +190,6 @@ public class ExerciseTypesRepository
         {
             existingEntity.ImageRoute = exerciseType.ImageRoute;
         }
-        if (exerciseType.PrimaryMuscleId is not null)
-        {
-            existingEntity.PrimaryMuscleId = exerciseType.PrimaryMuscleId;
-        }
-        if (exerciseType.SecondaryMuscleId is not null)
-        {
-            existingEntity.SecondaryMuscleId = exerciseType.SecondaryMuscleId;
-        }
         if (exerciseType.ParentExerciseTypeId != existingEntity.ParentExerciseTypeId)
         {
             existingEntity.ParentExerciseTypeId = exerciseType.ParentExerciseTypeId;
@@ -189,6 +201,24 @@ public class ExerciseTypesRepository
         if (exerciseType.Tags is not null)
         {
             existingEntity.Tags = exerciseType.Tags;
+        }
+        if (exerciseType.MuscleAssignments is not null)
+        {
+            existingEntity.MuscleAssignments.Clear();
+
+            foreach (var assignment in exerciseType.MuscleAssignments
+                         .OrderBy(assignment => assignment.Role)
+                         .ThenBy(assignment => assignment.SortOrder)
+                         .ThenBy(assignment => assignment.MuscleId))
+            {
+                existingEntity.MuscleAssignments.Add(new ExerciseTypeMuscleAssignment
+                {
+                    ExerciseTypeId = existingEntity.Id,
+                    MuscleId = assignment.MuscleId,
+                    Role = assignment.Role,
+                    SortOrder = assignment.SortOrder
+                });
+            }
         }
         existingEntity.FavoritedUsers = exerciseType.FavoritedUsers;
 
@@ -211,10 +241,6 @@ public class ExerciseTypesRepository
         {
             existingEntity.ImageRoute = exerciseType.ImageRoute;
         }
-        if (exerciseType.PrimaryMuscleId is not null)
-        {
-            existingEntity.PrimaryMuscleId = exerciseType.PrimaryMuscleId;
-        }
         if (exerciseType.ParentExerciseTypeId != existingEntity.ParentExerciseTypeId)
         {
             existingEntity.ParentExerciseTypeId = exerciseType.ParentExerciseTypeId;
@@ -223,8 +249,65 @@ public class ExerciseTypesRepository
         {
             existingEntity.Tags = exerciseType.Tags;
         }
+        if (exerciseType.MuscleAssignments is not null)
+        {
+            existingEntity.MuscleAssignments.Clear();
+
+            foreach (var assignment in exerciseType.MuscleAssignments
+                         .OrderBy(assignment => assignment.Role)
+                         .ThenBy(assignment => assignment.SortOrder)
+                         .ThenBy(assignment => assignment.MuscleId))
+            {
+                existingEntity.MuscleAssignments.Add(new ExerciseTypeMuscleAssignment
+                {
+                    ExerciseTypeId = existingEntity.Id,
+                    MuscleId = assignment.MuscleId,
+                    Role = assignment.Role,
+                    SortOrder = assignment.SortOrder
+                });
+            }
+        }
 
         await _context.SaveChangesAsync();
         return true;
     }
+
+    public DeleteExerciseTypeResult DeleteExerciseType(int id)
+    {
+        var existingEntity = QueryWithRelations()
+            .FirstOrDefault(et => et.Id == id);
+
+        if (existingEntity is null)
+        {
+            return DeleteExerciseTypeResult.NotFound;
+        }
+
+        if (existingEntity.Variations.Any())
+        {
+            return DeleteExerciseTypeResult.HasVariations;
+        }
+
+        if (_context.Exercises.Any(exercise => exercise.TypeId == id))
+        {
+            return DeleteExerciseTypeResult.InUseByExercises;
+        }
+
+        if (_context.WorkoutTemplate.Any(template => template.ExerciseTypes.Any(exerciseType => exerciseType.Id == id)))
+        {
+            return DeleteExerciseTypeResult.InUseByWorkoutTemplates;
+        }
+
+        _context.ExerciseTypes.Remove(existingEntity);
+        _context.SaveChanges();
+        return DeleteExerciseTypeResult.Deleted;
+    }
+}
+
+public enum DeleteExerciseTypeResult
+{
+    Deleted,
+    NotFound,
+    HasVariations,
+    InUseByExercises,
+    InUseByWorkoutTemplates
 }

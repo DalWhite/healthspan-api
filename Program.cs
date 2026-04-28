@@ -18,6 +18,7 @@ using System.Text.Json;
 
 
 var builder = WebApplication.CreateBuilder(args);
+const string CorsPolicyName = "MyAllowSpecificOrigins";
 
 var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
 builder.Services.Configure<GoogleAuthSettings>(builder.Configuration);
@@ -105,12 +106,12 @@ builder.Services.AddIdentityCore<User>()
     .AddApiEndpoints();
 builder.Services.AddCors(options =>
     {
-        options.AddPolicy(name: "MyAllowSpecificOrigins",
-                          builder =>
+        options.AddPolicy(name: CorsPolicyName,
+                          policyBuilder =>
                           {
-                              builder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
-                                     .AllowAnyMethod()
-                                     .AllowAnyHeader();
+                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
+                                           .AllowAnyMethod()
+                                           .AllowAnyHeader();
                           });
     });
 
@@ -192,8 +193,33 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        if (db.Database.IsRelational())
+        {
+            await db.Database.MigrateAsync();
+        }
+
+        await MuscleCatalogSeeder.UpsertAsync(db);
+        await MuscleCatalogSeeder.BackfillExerciseTypeAssignmentsAsync(db);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to apply muscle catalog startup migration and seed logic.");
+        throw;
+    }
+}
+
 app.UseHttpsRedirection();
-app.UseCors("MyAllowSpecificOrigins");
+app.UseRouting();
+app.UseCors(CorsPolicyName);
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Add Swagger middleware
 app.UseSwagger();
@@ -203,8 +229,10 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-app.MapIdentityApi<User>();
-app.MapControllers();
+app.MapIdentityApi<User>()
+   .RequireCors(CorsPolicyName);
+app.MapControllers()
+   .RequireCors(CorsPolicyName);
 
 // Comment out OpenAPI/Scalar
 // if (app.Environment.IsDevelopment())
@@ -254,6 +282,7 @@ app.MapPost("/Logout", async (
     return Results.Ok();
 })
 .WithOpenApi()
+.RequireCors(CorsPolicyName)
 .RequireAuthorization();
 
 app.Run();
