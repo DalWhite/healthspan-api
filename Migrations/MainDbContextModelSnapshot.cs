@@ -226,19 +226,10 @@ namespace healthspan_api.Migrations
                     b.Property<string>("ImageRoute")
                         .HasColumnType("longtext");
 
-                    b.Property<int>("MuscleGroup")
-                        .HasColumnType("int");
-
                     b.Property<string>("Name")
                         .HasColumnType("longtext");
 
                     b.Property<int?>("ParentExerciseTypeId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("PrimaryMuscleId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("SecondaryMuscleId")
                         .HasColumnType("int");
 
                     b.Property<string>("Tags")
@@ -251,11 +242,38 @@ namespace healthspan_api.Migrations
 
                     b.HasIndex("ParentExerciseTypeId");
 
-                    b.HasIndex("PrimaryMuscleId");
-
-                    b.HasIndex("SecondaryMuscleId");
-
                     b.ToTable("ExerciseTypes");
+                });
+
+            modelBuilder.Entity("ExerciseTypeMuscleAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ExerciseTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MuscleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuscleId");
+
+                    b.HasIndex("ExerciseTypeId", "MuscleId")
+                        .IsUnique();
+
+                    b.ToTable("ExerciseTypeMuscleAssignments");
                 });
 
             modelBuilder.Entity("ExerciseTypeUser", b =>
@@ -517,7 +535,16 @@ namespace healthspan_api.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<string>("Slug")
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
 
                     b.ToTable("Muscles");
                 });
@@ -830,19 +857,26 @@ namespace healthspan_api.Migrations
                         .HasForeignKey("ParentExerciseTypeId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Muscle", "PrimaryMuscle")
-                        .WithMany()
-                        .HasForeignKey("PrimaryMuscleId");
-
-                    b.HasOne("Muscle", "SecondaryMuscle")
-                        .WithMany()
-                        .HasForeignKey("SecondaryMuscleId");
-
                     b.Navigation("ParentExerciseType");
+                });
 
-                    b.Navigation("PrimaryMuscle");
+            modelBuilder.Entity("ExerciseTypeMuscleAssignment", b =>
+                {
+                    b.HasOne("ExerciseType", "ExerciseType")
+                        .WithMany("MuscleAssignments")
+                        .HasForeignKey("ExerciseTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.Navigation("SecondaryMuscle");
+                    b.HasOne("Muscle", "Muscle")
+                        .WithMany("ExerciseTypeAssignments")
+                        .HasForeignKey("MuscleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ExerciseType");
+
+                    b.Navigation("Muscle");
                 });
 
             modelBuilder.Entity("ExerciseTypeUser", b =>
@@ -1023,6 +1057,8 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("ExerciseType", b =>
                 {
+                    b.Navigation("MuscleAssignments");
+
                     b.Navigation("Variations");
                 });
 
@@ -1034,6 +1070,11 @@ namespace healthspan_api.Migrations
             modelBuilder.Entity("HealthMetricDefinition", b =>
                 {
                     b.Navigation("ReferenceRanges");
+                });
+
+            modelBuilder.Entity("Muscle", b =>
+                {
+                    b.Navigation("ExerciseTypeAssignments");
                 });
 
             modelBuilder.Entity("Routine", b =>
