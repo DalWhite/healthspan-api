@@ -1,4 +1,5 @@
 using healthspan_api.Persistence.Repositories;
+using Controllers.ApiContracts.ExerciseTypes;
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,65 +15,80 @@ public class ExercisesController : ControllerBase
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly ExerciseMetricsService _exercisesService;
     private readonly CurrentUserProvider _userProvider;
+    private readonly ILogger<ExercisesController> _logger;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider, ILogger<ExercisesController> logger)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _exercisesService = exercisesService;
         _userProvider = userProvider;
+        _logger = logger;
     }
+
     [HttpGet]
     public ActionResult<object> GetExercises(
         int? exerciseTypeId,
-        string userId,
+        string userId = "",
+        [FromQuery(Name = "muscleGroup")] List<string> muscleGroup = null,
         int? page = null,
-        int? pageSize = null, 
+        int? pageSize = null,
         string sortBy = "date",
         bool descending = true)
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
-            var exercises = new List<Exercise>();
+            userId = ResolveUserId(userId);
 
-            if (exerciseTypeId.HasValue)
+            if (page.HasValue != pageSize.HasValue)
             {
-                exercises = _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId);
-            }
-            else
-            {
-                exercises = _exerciseRepository.GetExercises(userId);
+                return BadRequest("Both page and pageSize must be specified together.");
             }
 
-            var mappedExercises = exercises.Adapt<List<GetExerciseResource>>();
+            if ((page.HasValue && page <= 0) || (pageSize.HasValue && pageSize <= 0))
+            {
+                return BadRequest("page and pageSize must be greater than zero.");
+            }
 
-            // Apply sorting
-            IEnumerable<GetExerciseResource> sortedExercises = sortBy.ToLower() switch
+            var exercises = exerciseTypeId.HasValue
+                ? _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId)
+                : _exerciseRepository.GetExercises(userId);
+
+            var selectedGroups = ParseMuscleGroups(muscleGroup);
+            if (selectedGroups.Count > 0)
+            {
+                exercises = exercises
+                    .Where(exercise => exercise.Type?.MuscleAssignments.Any(assignment =>
+                        assignment.Muscle is not null &&
+                        selectedGroups.Contains(assignment.Muscle.MuscleGroup)) == true)
+                    .ToList();
+            }
+
+            var mappedExercises = exercises.Select(MapExercise).ToList();
+            var normalizedSortBy = sortBy?.Trim().ToLowerInvariant();
+
+            IEnumerable<GetExerciseResource> sortedExercises = normalizedSortBy switch
             {
                 "date" => descending
-                    ? mappedExercises.OrderByDescending(e => e.Workout.Date)
-                    : mappedExercises.OrderBy(e => e.Workout.Date),
+                    ? mappedExercises.OrderByDescending(GetWorkoutDateSortKey).ThenByDescending(GetExerciseTypeNameSortKey)
+                    : mappedExercises.OrderBy(GetWorkoutDateSortKey).ThenBy(GetExerciseTypeNameSortKey),
                 "name" => descending
-                    ? mappedExercises.OrderByDescending(e => e.Type.Name)
-                    : mappedExercises.OrderBy(e => e.Type.Name),
+                    ? mappedExercises.OrderByDescending(GetExerciseTypeNameSortKey).ThenByDescending(GetWorkoutDateSortKey)
+                    : mappedExercises.OrderBy(GetExerciseTypeNameSortKey).ThenBy(GetWorkoutDateSortKey),
                 "type" => descending
-                    ? mappedExercises.OrderByDescending(e => e.Type.Name)
-                    : mappedExercises.OrderBy(e => e.Type.Name),
+                    ? mappedExercises.OrderByDescending(GetExerciseTypeNameSortKey).ThenByDescending(GetWorkoutDateSortKey)
+                    : mappedExercises.OrderBy(GetExerciseTypeNameSortKey).ThenBy(GetWorkoutDateSortKey),
                 _ => descending
-                    ? mappedExercises.OrderByDescending(e => e.Workout.Date)
-                    : mappedExercises.OrderBy(e => e.Workout.Date)
+                    ? mappedExercises.OrderByDescending(GetWorkoutDateSortKey).ThenByDescending(GetExerciseTypeNameSortKey)
+                    : mappedExercises.OrderBy(GetWorkoutDateSortKey).ThenBy(GetExerciseTypeNameSortKey)
             };
 
-            // Check if pagination is requested
-            bool usePagination = page.HasValue && pageSize.HasValue;
-
+            var usePagination = page.HasValue && pageSize.HasValue;
             if (usePagination)
             {
-                // Apply pagination
-                int currentPage = page.Value;
-                int currentPageSize = pageSize.Value;
+                var currentPage = page!.Value;
+                var currentPageSize = pageSize!.Value;
                 var totalCount = sortedExercises.Count();
                 var totalPages = (int)Math.Ceiling(totalCount / (double)currentPageSize);
 
@@ -81,30 +97,26 @@ public class ExercisesController : ControllerBase
                     .Take(currentPageSize)
                     .ToList();
 
-                var result = new PagedResult<GetExerciseResource>
+                return Ok(new PagedResult<GetExerciseResource>
                 {
                     Items = pagedExercises,
                     TotalCount = totalCount,
                     PageSize = currentPageSize,
                     CurrentPage = currentPage,
                     TotalPages = totalPages
-                };
+                });
+            }
 
-                return Ok(result);
-            }
-            else
-            {
-                // Return full list without pagination
-                return Ok(sortedExercises.ToList());
-            }
+            return Ok(sortedExercises.ToList());
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to load exercises.", ex);
         }
     }
+
     [HttpPost]
-    public IActionResult AddExercise(AddExerciseResource exerciseResource, string userId)
+    public IActionResult AddExercise(AddExerciseResource exerciseResource, string userId = "")
     {
         try
         {
@@ -117,7 +129,7 @@ public class ExercisesController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to create exercise.", ex);
         }
     }
 
@@ -129,51 +141,59 @@ public class ExercisesController : ControllerBase
             var domainExercise = _exerciseRepository.GetExercise(id);
             if (domainExercise is not null)
             {
-                var response = domainExercise.Adapt<GetExerciseResource>();
-                return Ok(response);
+                return Ok(MapExercise(domainExercise));
             }
-            else
-            {
-                return NotFound($"Exercise with ID {id} not found");
-            }
+
+            return NotFound($"Exercise with ID {id} not found");
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to load exercise {id}.", ex);
         }
     }
+
     [HttpDelete("{id}")]
     public ActionResult<GetExerciseResource> DeleteExercise(Guid id)
     {
         try
         {
+            var existingExercise = _exerciseRepository.GetExercise(id);
+            if (existingExercise is null)
+            {
+                return NotFound($"Exercise with ID {id} not found");
+            }
+
             _exerciseRepository.DeleteExercise(id);
             return NoContent();
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to delete exercise {id}.", ex);
         }
     }
+
     [HttpGet("{id}/metrics")]
-    public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id, string userId)
+    public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id, string userId = "")
     {
         try
         {
-
             var domainExercise = _exerciseRepository.GetExercise(id);
+            if (domainExercise is null)
+            {
+                return NotFound($"Exercise with ID {id} not found");
+            }
 
             var exerciseMetrics = domainExercise.Adapt<GetExerciseMetrics>();
             return Ok(exerciseMetrics);
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to load exercise metrics for {id}.", ex);
         }
     }
 
     [HttpPut]
-    public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource, string userId)
+    public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource, string userId = "")
     {
         try
         {
@@ -185,19 +205,17 @@ public class ExercisesController : ControllerBase
                 _exerciseRepository.UpdateExercise(domainExercise, userId);
                 return Ok("Exercise updated successfully");
             }
-            else
-            {
-                return NotFound($"Exercise with ID {domainExercise.Id} not found");
-            }
+
+            return NotFound($"Exercise with ID {domainExercise.Id} not found");
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to update exercise {exerciseResource.Id}.", ex);
         }
     }
 
     [HttpGet("{exerciseTypeId}/kpis")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId, string userId)
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId, string userId = "")
     {
         try
         {
@@ -205,21 +223,19 @@ public class ExercisesController : ControllerBase
             var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId, userId);
             if (exerciseTypeKpis is not null)
             {
-                var response = exerciseTypeKpis;
-                return Ok(response);
+                return Ok(exerciseTypeKpis);
             }
-            else
-            {
-                return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
-            }
+
+            return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to load KPIs for exercise type {exerciseTypeId}.", ex);
         }
     }
+
     [HttpGet("{exerciseTypeId}/trends")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type, string userId)
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type, string userId = "")
     {
         try
         {
@@ -227,18 +243,83 @@ public class ExercisesController : ControllerBase
             var exerciseTypeTrends = _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
             if (exerciseTypeTrends is not null)
             {
-                var response = exerciseTypeTrends;
-                return Ok(response);
+                return Ok(exerciseTypeTrends);
             }
-            else
-            {
-                return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
-            }
+
+            return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected($"Failed to load trends for exercise type {exerciseTypeId}.", ex);
         }
+    }
+
+    private string ResolveUserId(string userId)
+        => string.IsNullOrWhiteSpace(userId)
+            ? _userProvider.GetCurrentUserId() ?? string.Empty
+            : userId;
+
+    private static HashSet<MuscleGroup> ParseMuscleGroups(IEnumerable<string> muscleGroups)
+        => (muscleGroups ?? [])
+            .Select(value => Enum.TryParse<MuscleGroup>(value, ignoreCase: true, out var group) ? group : (MuscleGroup?)null)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToHashSet();
+
+    private static GetExerciseResource MapExercise(Exercise exercise)
+        => new()
+        {
+            Id = exercise.Id,
+            Series = exercise.Series,
+            Repetitions = exercise.Repetitions,
+            Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
+            Comments = exercise.Comments,
+            MaxRepetition = exercise.MaxRepetition,
+            Volume = exercise.Volume,
+            Intensity = exercise.Intensity,
+            Type = exercise.Type is null ? null : MapExerciseType(exercise.Type),
+            Workout = exercise.Workout?.Adapt<GetWorkoutResource>()
+        };
+
+    private static GetExerciseTypeResource MapExerciseType(ExerciseType exerciseType)
+        => new()
+        {
+            Id = exerciseType.Id,
+            Name = exerciseType.Name,
+            Description = exerciseType.Description,
+            ImageRoute = exerciseType.ImageRoute,
+            WeightType = exerciseType.WeightType,
+            ParentExerciseTypeId = exerciseType.ParentExerciseTypeId,
+            Tags = (exerciseType.Tags ?? [])
+                .Select(tag => new ExerciseTagResource
+                {
+                    Category = tag.Category ?? string.Empty,
+                    Name = tag.Name ?? string.Empty
+                })
+                .ToList(),
+            MuscleAssignments = (exerciseType.MuscleAssignments ?? [])
+                .OrderBy(assignment => assignment.Role)
+                .ThenBy(assignment => assignment.SortOrder)
+                .ThenBy(assignment => assignment.MuscleId)
+                .Select(assignment => new ExerciseTypeMuscleAssignmentResource
+                {
+                    MuscleId = assignment.MuscleId,
+                    Role = assignment.Role.ToString(),
+                    SortOrder = assignment.SortOrder
+                })
+                .ToList()
+        };
+
+    private static DateTime GetWorkoutDateSortKey(GetExerciseResource exercise)
+        => exercise.Workout?.Date ?? DateTime.MinValue;
+
+    private static string GetExerciseTypeNameSortKey(GetExerciseResource exercise)
+        => exercise.Type?.Name ?? string.Empty;
+
+    private ObjectResult Unexpected(string title, Exception ex)
+    {
+        _logger.LogError(ex, "{Title}", title);
+        return Problem(title: title, statusCode: StatusCodes.Status500InternalServerError);
     }
 
     public enum TrendKpiType

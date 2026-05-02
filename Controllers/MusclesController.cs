@@ -20,9 +20,11 @@ public class MusclesController : ControllerBase
         var response = muscles.Select(m => new MuscleResponse
         {
             Id = m.Id,
+            Slug = m.Slug,
             Name = m.Name,
             Side = m.Side.ToString(),
-            MuscleGroup = m.MuscleGroup.ToString()
+            MuscleGroup = m.MuscleGroup.ToString(),
+            SortOrder = m.SortOrder
         }).ToList();
 
         return Ok(response);
@@ -41,9 +43,11 @@ public class MusclesController : ControllerBase
         var response = new MuscleResponse
         {
             Id = muscle.Id,
+            Slug = muscle.Slug,
             Name = muscle.Name,
             Side = muscle.Side.ToString(),
-            MuscleGroup = muscle.MuscleGroup.ToString()
+            MuscleGroup = muscle.MuscleGroup.ToString(),
+            SortOrder = muscle.SortOrder
         };
 
         return Ok(response);
