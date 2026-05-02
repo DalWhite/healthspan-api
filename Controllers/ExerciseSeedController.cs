@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Controllers.ApiContracts.ExerciseTypes;
-using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -59,7 +58,9 @@ public class ExerciseSeedController : ControllerBase
                 try
                 {
                     var tags = BuildTagsFromExercise(exercise);
-                    var muscleId = await ResolveMuscleNameAsync(exercise.PrimaryMuscles?.FirstOrDefault());
+                    var assignmentResult = await ResolveAssignmentsAsync(
+                        exercise.PrimaryMuscles,
+                        exercise.SecondaryMuscles);
                     var imageRoute = BuildImageUrl(exercise);
 
                     // Check if exercise already exists
@@ -70,10 +71,9 @@ public class ExerciseSeedController : ControllerBase
                         Name = exercise.Name,
                         Description = exercise.Instructions != null ? string.Join("; ", exercise.Instructions) : "",
                         ImageRoute = imageRoute,
-                        PrimaryMuscleId = muscleId,
                         Tags = tags,
                         DifficultyLevel = 1,
-                        MuscleGroup = MuscleGroup.Core
+                        MuscleAssignments = assignmentResult.Assignments
                     };
 
                     if (existing != null)
@@ -90,6 +90,11 @@ public class ExerciseSeedController : ControllerBase
                         // Add new exercise
                         await _exerciseTypeRepository.AddExerciseTypeAsync(exerciseData);
                         addedCount++;
+                    }
+
+                    foreach (var unmappedMuscle in assignmentResult.UnmappedMuscles)
+                    {
+                        errors.Add($"{exercise.Name}: unmapped external muscle '{unmappedMuscle}'");
                     }
                 }
                 catch (Exception ex)
@@ -171,18 +176,63 @@ public class ExerciseSeedController : ControllerBase
     }
 
     /// <summary>
-    /// Resolves a muscle name to the muscle ID in the database
-    /// Returns null if muscle is not found or name is empty
+    /// Resolves external muscle lists to canonical primary/secondary assignments.
     /// </summary>
-    private async Task<int?> ResolveMuscleNameAsync(string muscleName)
+    private async Task<AssignmentResolutionResult> ResolveAssignmentsAsync(
+        IEnumerable<string>? primaryMuscles,
+        IEnumerable<string>? secondaryMuscles)
     {
-        if (string.IsNullOrWhiteSpace(muscleName))
-        {
-            return null;
-        }
+        var assignments = new List<ExerciseTypeMuscleAssignment>();
+        var unmappedMuscles = new List<string>();
+        var seenMuscleIds = new HashSet<int>();
 
-        var muscle = await _muscleRepository.GetByNameAsync(muscleName.ToLower());
-        return muscle?.Id;
+        await AddAssignmentsAsync(primaryMuscles, ExerciseMuscleRole.Primary, assignments, seenMuscleIds, unmappedMuscles);
+        await AddAssignmentsAsync(secondaryMuscles, ExerciseMuscleRole.Secondary, assignments, seenMuscleIds, unmappedMuscles);
+
+        return new AssignmentResolutionResult(assignments, unmappedMuscles);
+    }
+
+    private async Task AddAssignmentsAsync(
+        IEnumerable<string>? muscleNames,
+        ExerciseMuscleRole role,
+        ICollection<ExerciseTypeMuscleAssignment> assignments,
+        ISet<int> seenMuscleIds,
+        ICollection<string> unmappedMuscles)
+    {
+        var sortOrder = assignments.Count(assignment => assignment.Role == role) + 1;
+
+        foreach (var muscleName in muscleNames ?? Enumerable.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(muscleName))
+            {
+                continue;
+            }
+
+            var resolvedSlug = MuscleCatalogSeeder.TryResolveSlug(muscleName);
+            if (string.IsNullOrWhiteSpace(resolvedSlug))
+            {
+                unmappedMuscles.Add(muscleName);
+                continue;
+            }
+
+            var muscle = await _muscleRepository.GetBySlugAsync(resolvedSlug);
+            if (muscle?.Id is not int muscleId || !seenMuscleIds.Add(muscleId))
+            {
+                if (muscle is null)
+                {
+                    unmappedMuscles.Add(muscleName);
+                }
+
+                continue;
+            }
+
+            assignments.Add(new ExerciseTypeMuscleAssignment
+            {
+                MuscleId = muscleId,
+                Role = role,
+                SortOrder = sortOrder++
+            });
+        }
     }
 
     /// <summary>
@@ -205,4 +255,8 @@ public class ExerciseSeedController : ControllerBase
         // Construct full URL to the image in the free-exercise-db repository
         return $"https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/{imagePath}";
     }
+
+    private sealed record AssignmentResolutionResult(
+        List<ExerciseTypeMuscleAssignment> Assignments,
+        List<string> UnmappedMuscles);
 }

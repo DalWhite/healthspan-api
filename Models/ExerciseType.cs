@@ -7,15 +7,11 @@ public class ExerciseType
     public string Name { get; set; }
     public string Description { get; set; }
     public string ImageRoute { get; set; }
-    public int? PrimaryMuscleId { get; set; }
-    public Muscle PrimaryMuscle { get; set; }
-    public int? SecondaryMuscleId { get; set; }
-    public Muscle SecondaryMuscle { get; set; }
-    public MuscleGroup MuscleGroup { get; set; }
     public int DifficultyLevel { get; set; }
     public List<User> FavoritedUsers { get; set; }
     public List<WorkoutTemplate> WorkoutTemplates { get; set; }
     public string WeightType { get; set; }
+    public List<ExerciseTypeMuscleAssignment> MuscleAssignments { get; set; } = new();
     
     /// <summary>
     /// Tags stored as JSON (equipment, mechanic, level, force, type)
