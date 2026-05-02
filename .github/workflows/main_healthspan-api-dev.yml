@@ -35,6 +35,8 @@ jobs:
           files: '**/appsettings.json'
         env:
           DbConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
+          GoogleClientId: ${{ secrets.GOOGLECLIENTID }}
+          GoogleClientSecret: ${{ secrets.GOOGLECLIENTSECRET }}
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4

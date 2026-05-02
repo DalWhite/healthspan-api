@@ -25,6 +25,8 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
   {
     return context.Exercises
       .Include(e => e.Type)
+        .ThenInclude(type => type.MuscleAssignments)
+          .ThenInclude(assignment => assignment.Muscle)
       .Include(e => e.Workout)
       .IgnoreQueryFilters()
       .FirstOrDefault(e => e.Id == Id);
@@ -33,6 +35,8 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
   {
     var query = context.Exercises
       .Include(e => e.Type)
+        .ThenInclude(type => type.MuscleAssignments)
+          .ThenInclude(assignment => assignment.Muscle)
       .Include(e => e.Workout)
       .AsQueryable();
 
@@ -52,6 +56,8 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
       .Where(e => e.Workout.UserId == userId)
       .Where(e => e.TypeId == exerciseTypeId)
       .Include(e => e.Type)
+        .ThenInclude(type => type.MuscleAssignments)
+          .ThenInclude(assignment => assignment.Muscle)
       .Include(e => e.Workout)
       .ToList();
   }

@@ -18,11 +18,15 @@ using System.Text.Json;
 
 
 var builder = WebApplication.CreateBuilder(args);
+const string CorsPolicyName = "MyAllowSpecificOrigins";
 
 var dbConnectionString = builder.Configuration.GetSection("DbConnectionString").Value;
-var googleSection = builder.Configuration.GetSection("Authentication:Google");
-
-builder.Services.Configure<GoogleAuthSettings>(googleSection);
+builder.Services.Configure<GoogleAuthSettings>(builder.Configuration);
+builder.Services.Configure<AzureBlobStorageSettings>(builder.Configuration);
+builder.Services.Configure<FileSystemDocumentStorageSettings>(builder.Configuration);
+builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configuration);
+builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
+var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
@@ -35,10 +39,10 @@ var authenticationBuilder = builder.Services.AddAuthentication(options =>
 authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
 authenticationBuilder.AddGoogle(options =>
 {
-    options.ClientId = googleSection["ClientId"] ?? string.Empty;
-    options.ClientSecret = googleSection["ClientSecret"] ?? string.Empty;
+    options.ClientId = googleSettings.ClientId;
+    options.ClientSecret = googleSettings.ClientSecret;
 
-    var callbackUri = googleSection["CallbackUri"];
+    var callbackUri = googleSettings.CallbackUri;
     if (!string.IsNullOrWhiteSpace(callbackUri) && Uri.TryCreate(callbackUri, UriKind.Absolute, out var parsedCallback))
     {
         options.CallbackPath = parsedCallback.AbsolutePath;
@@ -102,17 +106,18 @@ builder.Services.AddIdentityCore<User>()
     .AddApiEndpoints();
 builder.Services.AddCors(options =>
     {
-        options.AddPolicy(name: "MyAllowSpecificOrigins",
-                          builder =>
+        options.AddPolicy(name: CorsPolicyName,
+                          policyBuilder =>
                           {
-                              builder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
-                                     .AllowAnyMethod()
-                                     .AllowAnyHeader();
+                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
+                                           .AllowAnyMethod()
+                                           .AllowAnyHeader();
                           });
     });
 
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<CurrentUserProvider>();
 builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<MuscleRepository>();
@@ -120,14 +125,36 @@ builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
 builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
+builder.Services.AddScoped<BloodTestsRepository>();
+builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
+builder.Services.AddScoped<BloodAnalyticsService>();
+builder.Services.AddSingleton<BloodTestProcessingChannel>();
+builder.Services.AddHostedService<BloodTestProcessingWorker>();
+builder.Services.AddScoped<GalpinAssessmentCatalogService>();
+builder.Services.AddScoped<GalpinAssessmentService>();
+builder.Services.AddScoped<HealthAccessService>();
+builder.Services.AddScoped<HealthDashboardService>();
+builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
+builder.Services.AddScoped<FileSystemBloodTestDocumentStorage>();
+builder.Services.AddScoped<IBloodTestDocumentStorage, HybridBloodTestDocumentStorage>();
 builder.Services.AddScoped<CsvService>();
 builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<GoogleTokenValidator>();
 builder.Services.AddScoped<GoogleReturnUrlResolver>();
 builder.Services.AddScoped<LocalTokenService>();
 builder.Services.AddScoped<IGoogleRefreshTokenProtector, GoogleRefreshTokenProtector>();
+builder.Services.AddScoped<IOcrExtractionProvider, AzureDocumentIntelligenceOcrProvider>();
+builder.Services.AddScoped<NoOpMarkerNormalizationProvider>();
+builder.Services.AddScoped<ConfiguredMarkerNormalizationProvider>();
+builder.Services.AddScoped<IMarkerNormalizationProvider, ConfiguredMarkerNormalizationProvider>();
 builder.Services.AddHttpClient<GoogleOAuthClient>();
+builder.Services.AddHttpClient<OpenRouterMarkerNormalizationProvider>((serviceProvider, client) =>
+{
+    var settings = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LlmMarkerNormalizationSettings>>().Value;
+    client.BaseAddress = new Uri(settings.BaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(30, settings.TimeoutSeconds));
+});
 builder.Services.AddMediatR(typeof(Program).Assembly);
 
 // Comment out OpenAPI/Scalar
@@ -166,8 +193,33 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        if (db.Database.IsRelational())
+        {
+            await db.Database.MigrateAsync();
+        }
+
+        await MuscleCatalogSeeder.UpsertAsync(db);
+        await MuscleCatalogSeeder.BackfillExerciseTypeAssignmentsAsync(db);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to apply muscle catalog startup migration and seed logic.");
+        throw;
+    }
+}
+
 app.UseHttpsRedirection();
-app.UseCors("MyAllowSpecificOrigins");
+app.UseRouting();
+app.UseCors(CorsPolicyName);
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Add Swagger middleware
 app.UseSwagger();
@@ -177,8 +229,10 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-app.MapIdentityApi<User>();
-app.MapControllers();
+app.MapIdentityApi<User>()
+   .RequireCors(CorsPolicyName);
+app.MapControllers()
+   .RequireCors(CorsPolicyName);
 
 // Comment out OpenAPI/Scalar
 // if (app.Environment.IsDevelopment())
@@ -228,6 +282,10 @@ app.MapPost("/Logout", async (
     return Results.Ok();
 })
 .WithOpenApi()
+.RequireCors(CorsPolicyName)
 .RequireAuthorization();
 
 app.Run();
+
+// Make the implicit Program class public so test projects can access it
+public partial class Program { }
