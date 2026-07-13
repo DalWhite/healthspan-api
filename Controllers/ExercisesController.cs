@@ -125,7 +125,7 @@ public class ExercisesController : ControllerBase
             domainExercise.TypeId = exerciseResource.TypeId;
             domainExercise.WorkoutId = exerciseResource.WorkoutId;
             var exerciseId = _exerciseRepository.AddExercise(domainExercise, userId);
-            return CreatedAtAction(nameof(GetExercise), new { id = exerciseId }, domainExercise);
+            return CreatedAtAction(nameof(GetExercise), new { id = exerciseId }, new { Id = exerciseId });
         }
         catch (Exception ex)
         {

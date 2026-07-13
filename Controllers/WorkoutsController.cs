@@ -42,7 +42,8 @@ public class WorkoutsController : ControllerBase
             workoutResource.UserId ??= _userProvider.GetCurrentUserId();
             var domainWorkout = workoutResource.Adapt<Workout>();
             var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
-            return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, domainWorkout);
+            var response = domainWorkout.Adapt<GetWorkoutResource>();
+            return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, response);
         }
         catch (Exception ex)
         {
