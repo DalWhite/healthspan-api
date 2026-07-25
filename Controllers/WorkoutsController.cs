@@ -146,10 +146,16 @@ public class WorkoutsController : ControllerBase
                 return NotFound($"Workout with ID {id} not found");
             }
 
-            if (_exerciseTypesRepository.GetExerciseType(resource.TypeId) is null)
+            var exerciseType = _exerciseTypesRepository.GetExerciseType(resource.TypeId);
+            if (exerciseType is null)
             {
                 return BadRequest($"ExerciseType with ID {resource.TypeId} not found");
             }
+
+            var recentTypeIds = await _workoutsRepository.GetRecentExerciseTypeIdsAsync(
+                userId,
+                workout.Id,
+                cancellationToken: cancellationToken);
 
             var exercise = new Exercise
             {
@@ -159,17 +165,14 @@ public class WorkoutsController : ControllerBase
                 Series = resource.Series,
                 Repetitions = resource.Repetitions,
                 Weight = (double)resource.Weight,
-                Comments = resource.Comments
+                Comments = resource.Comments,
+                Type = exerciseType
             };
 
             _exercisesRepository.AddExercise(exercise, userId);
+            workout.Exercises.Add(exercise);
 
-            var updatedWorkout = await _workoutsRepository.GetWorkoutSessionAsync(
-                id,
-                userId,
-                cancellationToken);
-
-            return Ok(await MapSessionAsync(updatedWorkout, userId, cancellationToken));
+            return Ok(MapSession(workout, recentTypeIds));
         }
         catch (Exception ex)
         {
@@ -232,12 +235,19 @@ public class WorkoutsController : ControllerBase
             workout.Id,
             cancellationToken: cancellationToken);
 
+        return MapSession(workout, recentTypeIds);
+    }
+
+    private static WorkoutSessionResource MapSession(
+        Workout workout,
+        IReadOnlyCollection<int> recentTypeIds)
+    {
         return new WorkoutSessionResource
         {
             Id = workout.Id,
             Date = DateOnly.FromDateTime(workout.Date ?? DateTime.Today),
             Type = workout.Type,
-            RecentExerciseTypeIds = recentTypeIds,
+            RecentExerciseTypeIds = recentTypeIds.ToList(),
             Exercises = (workout.Exercises ?? [])
                 .Select(exercise => new WorkoutSessionExerciseResource
                 {

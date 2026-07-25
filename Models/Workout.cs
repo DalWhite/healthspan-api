@@ -4,6 +4,7 @@ public class Workout
     public DateTime? Date { get; set; }
     public string Type { get; set; }
     public string UserId { get; set; }
+    public string DailySessionKey { get; set; }
     public User User { get; set; }
     public List<Exercise> Exercises { get; set; } = [];
 }

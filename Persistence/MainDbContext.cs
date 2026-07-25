@@ -40,6 +40,14 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         builder.Entity<GalpinAssessmentScore>().HasQueryFilter(score => score.GalpinAssessment.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<AnalyticsPermission>().HasQueryFilter(permission => permission.OwnerUserId == _userProvider.GetCurrentUserId() || permission.ViewerUserId == _userProvider.GetCurrentUserId());
 
+        builder.Entity<Workout>()
+            .Property(workout => workout.DailySessionKey)
+            .HasMaxLength(64);
+
+        builder.Entity<Workout>()
+            .HasIndex(workout => workout.DailySessionKey)
+            .IsUnique();
+
         builder.Entity<Muscle>()
             .Property(e => e.Side)
             .HasConversion(
