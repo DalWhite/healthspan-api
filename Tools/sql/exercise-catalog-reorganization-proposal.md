@@ -26,19 +26,21 @@ The exact atomic migration is retained in
 [`exercise-catalog-phase1-apply.sql`](exercise-catalog-phase1-apply.sql).
 It is an execution record and must not be rerun on the current database.
 
-## Phase 2 — apply ready
+## Phase 2 — completed
 
-Run
-[`exercise-catalog-phase2-preview.sql`](exercise-catalog-phase2-preview.sql)
-as one SQLTools query. It validates the live post-Phase-1 baseline and returns a
-single result grid without temporary tables or writes.
+Phase 2 was committed to `healthspan-dev` on 2026-07-25 using the Phase 1
+snapshot as its restore point.
 
-The live preview passed on 2026-07-25 with 72 catalog records, 2,072 history
-rows, 143 muscle assignments, and zero current/projected integrity issues.
-After taking a new backup, run the four SQLTools blocks in
+- Catalog: `72 → 72`
+- History: `2072 → 2072`
+- Variation links changed: `31`
+- Names normalized: `29`
+- Muscle assignments: `143 → 166` (`3` removed and `26` added)
+- Integrity issues: `0`
+
+The exact atomic migration is retained in
 [`exercise-catalog-phase2-apply.sql`](exercise-catalog-phase2-apply.sql).
-The expected committed state is 72 catalog records, unchanged history, 31 new
-variation links, 29 normalized names, and 166 muscle assignments.
+It is an execution record and must not be rerun on the current database.
 
 ### Variation hierarchy
 
