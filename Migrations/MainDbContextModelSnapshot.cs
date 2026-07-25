@@ -751,6 +751,10 @@ namespace healthspan_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("DailySessionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<DateTime?>("Date")
                         .HasColumnType("datetime(6)");
 
@@ -764,6 +768,9 @@ namespace healthspan_api.Migrations
                         .HasColumnType("varchar(255)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DailySessionKey")
+                        .IsUnique();
 
                     b.HasIndex("RoutineId");
 
