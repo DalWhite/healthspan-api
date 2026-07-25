@@ -1,6 +1,7 @@
 using healthspan_api.Events;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Services;
 namespace healthspan_api.Persistence.Repositories;
 
 public class ExercisesRepository(MainDbContext context, IMediator mediator)
@@ -82,6 +83,13 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
     }
     //FIX: this is wrong. Should try get a workout on that date. If there is one, swap workout. If not, create one.
     existingEntity.Workout.Date = exercise.Workout.Date;
+    if (existingEntity.Workout.DailySessionKey is not null &&
+        exercise.Workout.Date is not null)
+    {
+      existingEntity.Workout.DailySessionKey = WorkoutDailySessionKey.Create(
+        existingEntity.Workout.UserId,
+        DateOnly.FromDateTime(exercise.Workout.Date.Value));
+    }
     context.SaveChanges();
     mediator.Publish(new ExerciseUpdatedEvent(existingEntity, userId));
   }

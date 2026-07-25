@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using System.Data;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Services;
@@ -39,6 +37,12 @@ public class WorkoutsRepository
         if (workout.Date is not null)
         {
             existingEntity.Date = workout.Date;
+            if (existingEntity.DailySessionKey is not null)
+            {
+                existingEntity.DailySessionKey = WorkoutDailySessionKey.Create(
+                    existingEntity.UserId,
+                    DateOnly.FromDateTime(workout.Date.Value));
+            }
         }
         _context.SaveChanges();
     }
@@ -57,16 +61,12 @@ public class WorkoutsRepository
     {
         var start = date.ToDateTime(TimeOnly.MinValue);
         var end = start.AddDays(1);
-        var dailySessionKey = CreateDailySessionKey(userId, date);
+        var dailySessionKey = WorkoutDailySessionKey.Create(userId, date);
 
         return SessionQuery(userId)
             .OrderByDescending(workout => workout.DailySessionKey == dailySessionKey)
             .FirstOrDefaultAsync(
-                workout =>
-                    workout.DailySessionKey == dailySessionKey
-                    || (workout.DailySessionKey == null
-                        && workout.Date >= start
-                        && workout.Date < end),
+                workout => workout.Date >= start && workout.Date < end,
                 cancellationToken);
     }
 
@@ -77,7 +77,7 @@ public class WorkoutsRepository
         CancellationToken cancellationToken = default)
     {
         var lockKey = $"{userId}:{date:yyyy-MM-dd}";
-        var dailySessionKey = CreateDailySessionKey(userId, date);
+        var dailySessionKey = WorkoutDailySessionKey.Create(userId, date);
         var sessionLock = SessionLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
         await sessionLock.WaitAsync(cancellationToken);
 
@@ -97,16 +97,12 @@ public class WorkoutsRepository
             var existing = await SessionQuery(userId, asNoTracking: false)
                 .OrderByDescending(workout => workout.DailySessionKey == dailySessionKey)
                 .FirstOrDefaultAsync(
-                    workout =>
-                        workout.DailySessionKey == dailySessionKey
-                        || (workout.DailySessionKey == null
-                            && workout.Date >= start
-                            && workout.Date < end),
+                    workout => workout.Date >= start && workout.Date < end,
                     cancellationToken);
 
             if (existing is not null)
             {
-                if (existing.DailySessionKey is null)
+                if (existing.DailySessionKey != dailySessionKey)
                 {
                     existing.DailySessionKey = dailySessionKey;
                     await _context.SaveChangesAsync(cancellationToken);
@@ -207,11 +203,5 @@ public class WorkoutsRepository
                 .ThenInclude(exercise => exercise.Type);
 
         return asNoTracking ? query.AsNoTracking() : query;
-    }
-
-    private static string CreateDailySessionKey(string userId, DateOnly date)
-    {
-        var source = Encoding.UTF8.GetBytes($"{userId}\n{date:yyyy-MM-dd}");
-        return Convert.ToHexString(SHA256.HashData(source));
     }
 }
