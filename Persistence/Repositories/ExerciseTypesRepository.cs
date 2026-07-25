@@ -225,6 +225,33 @@ public class ExerciseTypesRepository
         _context.SaveChanges();
     }
 
+    public bool SetFavourite(int exerciseTypeId, User user, bool isFavourite)
+    {
+        var exerciseType = _context.ExerciseTypes
+            .Include(item => item.FavoritedUsers)
+            .FirstOrDefault(item => item.Id == exerciseTypeId);
+
+        if (exerciseType is null)
+        {
+            return false;
+        }
+
+        var existingFavourite = exerciseType.FavoritedUsers
+            .FirstOrDefault(favoritedUser => favoritedUser.Id == user.Id);
+
+        if (isFavourite && existingFavourite is null)
+        {
+            exerciseType.FavoritedUsers.Add(user);
+        }
+        else if (!isFavourite && existingFavourite is not null)
+        {
+            exerciseType.FavoritedUsers.Remove(existingFavourite);
+        }
+
+        _context.SaveChanges();
+        return true;
+    }
+
     public async Task<bool> UpdateExerciseTypeAsync(ExerciseType exerciseType)
     {
         var existingEntity = await GetByNameAsync(exerciseType.Name);
