@@ -134,6 +134,36 @@ public class ExerciseTypesController : ControllerBase
         }
     }
 
+    [HttpPut("{id:int}/favourite")]
+    public IActionResult SetFavourite(int id, SetExerciseTypeFavouriteResource resource)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var user = _usersRepository.GetUser(userId);
+            if (user is null)
+            {
+                return Unauthorized();
+            }
+
+            if (!_exerciseTypeRepository.SetFavourite(id, user, resource.IsFavourite))
+            {
+                return NotFound($"ExerciseType with ID {id} not found");
+            }
+
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return Unexpected($"Failed to update favourite for exercise type {id}.", ex);
+        }
+    }
+
     [HttpDelete("{id}")]
     public ActionResult DeleteExerciseType(int id)
     {
