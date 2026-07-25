@@ -1,15 +1,16 @@
 /*
-  Healthspan exercise catalog - Phase 2 apply
+  Healthspan exercise catalog - Phase 2 execution record
   Target: MySQL 8.0 / healthspan-dev
 
-  SQLTools usage:
-  1. Take a new database backup.
-  2. Run blocks 1 and 2 separately.
-  3. Put the new backup reference in block 3 and run it once.
-  4. Require Status=PASS and Persistence=COMMITTED.
-  5. Run block 4 only after a successful commit.
+  Applied successfully on 2026-07-25:
+  - Catalog: 72 -> 72
+  - History: 2072 -> 2072
+  - Hierarchy links changed: 31
+  - Names changed: 29
+  - Muscle assignments: 143 -> 166
+  - Integrity issues: 0
 
-  The procedure rolls back on every failed precondition or post-check.
+  Do not rerun this historical migration on the current database.
 */
 
 -- @block 1 - Remove stale Phase 2 procedure
