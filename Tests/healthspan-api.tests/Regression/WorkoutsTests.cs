@@ -145,7 +145,7 @@ public class WorkoutsTests : ApiTestBase
                 response.Content.ReadFromJsonAsync<WorkoutSessionResource>()));
 
         sessions.Should().NotContainNulls();
-        sessions.Select(session => session!.Id).Should().OnlyHaveUniqueItems().And.HaveCount(1);
+        sessions.Select(session => session!.Id).Distinct().Should().ContainSingle();
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
