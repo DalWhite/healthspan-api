@@ -26,10 +26,19 @@ The exact atomic migration is retained in
 [`exercise-catalog-phase1-apply.sql`](exercise-catalog-phase1-apply.sql).
 It is an execution record and must not be rerun on the current database.
 
-## Phase 2 — pending
+## Phase 2 — apply ready
 
-Run a fresh audit and create a new read-only preview before implementing Phase 2.
-Do not reuse the Phase 1 baseline.
+Run
+[`exercise-catalog-phase2-preview.sql`](exercise-catalog-phase2-preview.sql)
+as one SQLTools query. It validates the live post-Phase-1 baseline and returns a
+single result grid without temporary tables or writes.
+
+The live preview passed on 2026-07-25 with 72 catalog records, 2,072 history
+rows, 143 muscle assignments, and zero current/projected integrity issues.
+After taking a new backup, run the four SQLTools blocks in
+[`exercise-catalog-phase2-apply.sql`](exercise-catalog-phase2-apply.sql).
+The expected committed state is 72 catalog records, unchanged history, 31 new
+variation links, 29 normalized names, and 166 muscle assignments.
 
 ### Variation hierarchy
 
@@ -75,16 +84,19 @@ Exercise `70` also needs the incorrect muscle links `4`, `5`, and `9` removed.
 38 Extensión de tríceps con kettlebell; 41 Remo con kettlebell
 42 Press de pecho; 43 Curl de bíceps en polea
 46 Clean and press unilateral con kettlebell; 47 Puente de glúteos
-50 Peso muerto rumano; 54 Jalón al pecho con agarre ancho
+54 Jalón al pecho con agarre ancho
 55 Sentadilla búlgara; 58 Elevaciones frontales; 60 Sentadilla sumo
-64 Remo con barra; 65 Remo unilateral en polea; 67 Curl martillo
+65 Remo unilateral en polea
 69 Extensión de cuádriceps; 70 Jalón al pecho supino
 73 Curl femoral tumbado en máquina; 74 Elevación de gemelos en máquina
 947 Remo en polea; 948 Curl crossover de bíceps
 949 Hip thrust en máquina; 951 Remo unilateral con mancuerna
-952 Remo abierto en polea; 953 Around the world de hombros
+953 Around the world de hombros
 954 Jalón al pecho con agarre ancho en máquina
 ```
+
+Types `50`, `64`, `67`, and `952` already use their canonical names and require
+no naming update.
 
 ### Manual decisions
 

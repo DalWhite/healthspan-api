@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using healthspan_api.Persistence.Repositories;
 using Services;
 
 [Authorize]
@@ -9,14 +10,23 @@ using Services;
 public class WorkoutsController : ControllerBase
 {
     private readonly WorkoutsRepository _workoutsRepository;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ExercisesRepository _exercisesRepository;
+    private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly CurrentUserProvider _userProvider;
+    private readonly ILogger<WorkoutsController> _logger;
 
-    public WorkoutsController(WorkoutsRepository workoutRepository, IHttpContextAccessor httpContextAccessor, CurrentUserProvider userProvider)
+    public WorkoutsController(
+        WorkoutsRepository workoutRepository,
+        ExercisesRepository exercisesRepository,
+        ExerciseTypesRepository exerciseTypesRepository,
+        CurrentUserProvider userProvider,
+        ILogger<WorkoutsController> logger)
     {
         _workoutsRepository = workoutRepository;
-        _httpContextAccessor = httpContextAccessor;
+        _exercisesRepository = exercisesRepository;
+        _exerciseTypesRepository = exerciseTypesRepository;
         _userProvider = userProvider;
+        _logger = logger;
     }
     [HttpGet]
     public ActionResult<List<GetWorkoutResource>> GetWorkouts(string traineeId)
@@ -48,6 +58,122 @@ public class WorkoutsController : ControllerBase
         catch (Exception ex)
         {
             return BadRequest($"Error: {ex.Message}");
+        }
+    }
+
+    [HttpGet("today")]
+    public async Task<ActionResult<WorkoutSessionResource>> GetTodayWorkout(
+        DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var sessionDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var workout = await _workoutsRepository.GetWorkoutSessionForDateAsync(
+                userId,
+                sessionDate,
+                cancellationToken);
+
+            if (workout is null)
+            {
+                return NoContent();
+            }
+
+            return Ok(await MapSessionAsync(workout, userId, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to load today's workout.", ex);
+        }
+    }
+
+    [HttpPost("today")]
+    public async Task<ActionResult<WorkoutSessionResource>> StartTodayWorkout(
+        StartWorkoutSessionResource resource,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var result = await _workoutsRepository.GetOrCreateWorkoutSessionAsync(
+                userId,
+                resource.Date,
+                resource.Type,
+                cancellationToken);
+            var response = await MapSessionAsync(result.Workout, userId, cancellationToken);
+
+            return result.Created
+                ? CreatedAtAction(nameof(GetWorkout), new { id = result.Workout.Id }, response)
+                : Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to start today's workout.", ex);
+        }
+    }
+
+    [HttpPost("{id:guid}/exercises")]
+    public async Task<ActionResult<WorkoutSessionResource>> AddExerciseToWorkout(
+        Guid id,
+        AddWorkoutSessionExerciseResource resource,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var workout = await _workoutsRepository.GetWorkoutSessionAsync(
+                id,
+                userId,
+                cancellationToken);
+            if (workout is null)
+            {
+                return NotFound($"Workout with ID {id} not found");
+            }
+
+            if (_exerciseTypesRepository.GetExerciseType(resource.TypeId) is null)
+            {
+                return BadRequest($"ExerciseType with ID {resource.TypeId} not found");
+            }
+
+            var exercise = new Exercise
+            {
+                Id = Guid.NewGuid(),
+                WorkoutId = id,
+                TypeId = resource.TypeId,
+                Series = resource.Series,
+                Repetitions = resource.Repetitions,
+                Weight = (double)resource.Weight,
+                Comments = resource.Comments
+            };
+
+            _exercisesRepository.AddExercise(exercise, userId);
+
+            var updatedWorkout = await _workoutsRepository.GetWorkoutSessionAsync(
+                id,
+                userId,
+                cancellationToken);
+
+            return Ok(await MapSessionAsync(updatedWorkout, userId, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to add the exercise to today's workout.", ex);
         }
     }
 
@@ -94,5 +220,42 @@ public class WorkoutsController : ControllerBase
         {
             return BadRequest($"Error: {ex.Message}");
         }
+    }
+
+    private async Task<WorkoutSessionResource> MapSessionAsync(
+        Workout workout,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var recentTypeIds = await _workoutsRepository.GetRecentExerciseTypeIdsAsync(
+            userId,
+            workout.Id,
+            cancellationToken: cancellationToken);
+
+        return new WorkoutSessionResource
+        {
+            Id = workout.Id,
+            Date = DateOnly.FromDateTime(workout.Date ?? DateTime.Today),
+            Type = workout.Type,
+            RecentExerciseTypeIds = recentTypeIds,
+            Exercises = (workout.Exercises ?? [])
+                .Select(exercise => new WorkoutSessionExerciseResource
+                {
+                    Id = exercise.Id,
+                    TypeId = exercise.TypeId ?? 0,
+                    Name = exercise.Type?.Name ?? "Exercise",
+                    Series = exercise.Series,
+                    Repetitions = exercise.Repetitions,
+                    Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
+                    Comments = exercise.Comments
+                })
+                .ToList()
+        };
+    }
+
+    private ObjectResult Unexpected(string title, Exception ex)
+    {
+        _logger.LogError(ex, "{Title}", title);
+        return Problem(title: title, statusCode: StatusCodes.Status500InternalServerError);
     }
 }
