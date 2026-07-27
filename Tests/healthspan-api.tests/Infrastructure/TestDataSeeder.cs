@@ -136,7 +136,7 @@ public static class TestDataSeeder
 
     private static void SeedWorkoutsAndExercises(MainDbContext db)
     {
-        if (db.Workouts.Any())
+        if (db.Workouts.IgnoreQueryFilters().Any())
             return;
 
         var workout1 = new Workout
@@ -186,7 +186,7 @@ public static class TestDataSeeder
 
     private static void SeedBloodTests(MainDbContext db)
     {
-        if (db.BloodTests.Any())
+        if (db.BloodTests.IgnoreQueryFilters().Any())
             return;
 
         var bloodTest = new BloodTest

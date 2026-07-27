@@ -2,11 +2,11 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -21,48 +21,27 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
     public const string TestUserId = "test-user-001";
     public const string TestUserEmail = "test@healthspan.dev";
 
+    private readonly string _databaseName = $"HealthspanTestDb_{Guid.NewGuid():N}";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.ConfigureLogging(logging => logging.ClearProviders());
+        // A fixed environment makes local and CI behavior identical. Keeping error logging
+        // enabled also preserves the server exception in CI if a request fails.
+        builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
 
         builder.ConfigureTestServices(services =>
         {
-            services.AddLogging(logging => logging.ClearProviders());
+            // Replace only MainDbContext's MySQL options. Removing every EF service
+            // is brittle because framework patch versions can register them differently.
+            services.RemoveAll<IDbContextOptionsConfiguration<MainDbContext>>();
+            services.RemoveAll<DbContextOptions<MainDbContext>>();
+            services.RemoveAll<DbContextOptions>();
+            services.RemoveAll<MainDbContext>();
+            services.AddDbContext<MainDbContext>(options =>
+                options.UseInMemoryDatabase(_databaseName));
 
-            // Replace MySQL with InMemory — must remove ALL EF descriptors to avoid dual-provider conflict
-            var descriptorsToRemove = services
-                .Where(d => d.ServiceType.FullName?.Contains("EntityFrameworkCore") == true
-                         || d.ServiceType == typeof(DbContextOptions<MainDbContext>)
-                         || d.ServiceType == typeof(DbContextOptions)
-                         || d.ServiceType == typeof(MainDbContext))
-                .ToList();
-            foreach (var d in descriptorsToRemove)
-                services.Remove(d);
-
-            var testDbName = $"HealthspanTestDb_{Guid.NewGuid():N}";
-            services.AddDbContext<MainDbContext>((sp, options) =>
-            {
-                options.UseInMemoryDatabase(testDbName);
-            });
-
-            // CurrentUserProvider reads claims from HttpContext. During HTTP requests, TestAuthHandler
-            // provides the claims. During seeding (no request), we need a fallback HttpContext.
-            services.RemoveAll<IHttpContextAccessor>();
-            services.AddSingleton<IHttpContextAccessor>(_ =>
-            {
-                var claims = new[]
-                {
-                    new Claim(ClaimTypes.NameIdentifier, TestUserId),
-                    new Claim(ClaimTypes.Email, TestUserEmail),
-                    new Claim(ClaimTypes.Name, "Test User"),
-                };
-                var identity = new ClaimsIdentity(claims, "Test");
-                var principal = new ClaimsPrincipal(identity);
-                var context = new DefaultHttpContext { User = principal };
-                return new TestHttpContextAccessor(context);
-            });
-
-            // Replace external service dependencies with no-ops/fakes
+            // Replace external service dependencies with no-ops/fakes.
             services.RemoveAll<IOcrExtractionProvider>();
             services.AddScoped<IOcrExtractionProvider>(_ => Substitute.For<IOcrExtractionProvider>());
 
@@ -72,19 +51,19 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IBloodTestDocumentStorage>();
             services.AddScoped<IBloodTestDocumentStorage>(_ => Substitute.For<IBloodTestDocumentStorage>());
 
-            // Remove hosted services (background workers)
+            // Background workers must not outlive or mutate an integration test database.
             services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>();
 
-            // Add test authentication scheme
-            services.AddAuthentication("Test")
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
+            services.AddAuthentication(TestAuthHandler.AuthenticationSchemeName)
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                    TestAuthHandler.AuthenticationSchemeName,
+                    _ => { });
 
-            // Override default authentication scheme
             services.PostConfigure<AuthenticationOptions>(options =>
             {
-                options.DefaultAuthenticateScheme = "Test";
-                options.DefaultChallengeScheme = "Test";
-                options.DefaultScheme = "Test";
+                options.DefaultAuthenticateScheme = TestAuthHandler.AuthenticationSchemeName;
+                options.DefaultChallengeScheme = TestAuthHandler.AuthenticationSchemeName;
+                options.DefaultScheme = TestAuthHandler.AuthenticationSchemeName;
             });
         });
     }
@@ -92,11 +71,15 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
 
 public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
+    public const string AuthenticationSchemeName = "Test";
+
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder)
-        : base(options, logger, encoder) { }
+        : base(options, logger, encoder)
+    {
+    }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -107,28 +90,10 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             new Claim(ClaimTypes.Name, "Test User"),
         };
 
-        var identity = new ClaimsIdentity(claims, "Test");
+        var identity = new ClaimsIdentity(claims, AuthenticationSchemeName);
         var principal = new ClaimsPrincipal(identity);
-        var ticket = new AuthenticationTicket(principal, "Test");
+        var ticket = new AuthenticationTicket(principal, AuthenticationSchemeName);
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
-    }
-}
-
-/// <summary>
-/// An IHttpContextAccessor that returns the real request HttpContext when available,
-/// falling back to a default context with test claims (for seeding outside HTTP requests).
-/// </summary>
-public class TestHttpContextAccessor : IHttpContextAccessor
-{
-    private readonly HttpContext _fallback;
-    private readonly HttpContextAccessor _inner = new();
-
-    public TestHttpContextAccessor(HttpContext fallback) => _fallback = fallback;
-
-    public HttpContext? HttpContext
-    {
-        get => _inner.HttpContext ?? _fallback;
-        set => _inner.HttpContext = value;
     }
 }
