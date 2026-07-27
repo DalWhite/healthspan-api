@@ -111,7 +111,8 @@ builder.Services.AddCors(options =>
                           {
                               policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
                                            .AllowAnyMethod()
-                                           .AllowAnyHeader();
+                                           .AllowAnyHeader()
+                                           .WithExposedHeaders("X-Total-Count");
                           });
     });
 

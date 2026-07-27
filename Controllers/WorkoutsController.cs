@@ -1,6 +1,7 @@
 using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using healthspan_api.Persistence.Repositories;
 using Services;
 
@@ -29,18 +30,66 @@ public class WorkoutsController : ControllerBase
         _logger = logger;
     }
     [HttpGet]
-    public ActionResult<List<GetWorkoutResource>> GetWorkouts(string traineeId)
+    public async Task<ActionResult<List<GetWorkoutResource>>> GetWorkouts(
+        string traineeId,
+        DateOnly? from,
+        DateOnly? to,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var userId = string.IsNullOrEmpty(traineeId) ? _userProvider.GetCurrentUserId(): traineeId;
-            var domainWorkouts = _workoutsRepository.GetWorkouts(userId);
-            var response = domainWorkouts.Adapt<List<GetWorkoutResource>>();
+            if (from.HasValue && to.HasValue && from.Value > to.Value)
+            {
+                return Problem(
+                    title: "The start date cannot be after the end date.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (page.HasValue && page.Value < 1)
+            {
+                return Problem(
+                    title: "Page must be at least 1.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (pageSize.HasValue && (pageSize.Value < 1 || pageSize.Value > 100))
+            {
+                return Problem(
+                    title: "Page size must be between 1 and 100.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var userId = string.IsNullOrEmpty(traineeId)
+                ? _userProvider.GetCurrentUserId()
+                : traineeId;
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var shouldPaginate = page.HasValue || pageSize.HasValue;
+            int? normalizedPage = shouldPaginate ? page ?? 1 : null;
+            int? normalizedPageSize = shouldPaginate ? pageSize ?? 20 : null;
+            var result = await _workoutsRepository.GetWorkoutHistoryAsync(
+                userId,
+                from,
+                to,
+                normalizedPage,
+                normalizedPageSize,
+                cancellationToken);
+
+            Response.Headers["X-Total-Count"] = result.TotalCount.ToString();
+
+            var response = result.Workouts
+                .Select(workout => MapWorkoutHistory(workout, includeExercises: false))
+                .ToList();
             return Ok(response);
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to load workout history.", ex);
         }
     }
 
@@ -180,48 +229,120 @@ public class WorkoutsController : ControllerBase
         }
     }
 
-    [HttpGet("{id}")]
-    public ActionResult<GetWorkoutResource> GetWorkout(Guid id)
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<GetWorkoutResource>> GetWorkout(
+        Guid id,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var domainWorkout = _workoutsRepository.GetWorkout(id);
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var domainWorkout = await _workoutsRepository.GetWorkoutHistoryDetailsAsync(
+                id,
+                userId,
+                cancellationToken);
             if (domainWorkout is not null)
             {
-                var response = domainWorkout.Adapt<GetWorkoutResource>();
-                return Ok(response);
+                return Ok(MapWorkoutHistory(domainWorkout, includeExercises: true));
             }
-            else
-            {
-                return NotFound($"Workout with ID {id} not found");
-            }
+
+            return NotFound($"Workout with ID {id} not found");
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to load the workout.", ex);
         }
     }
 
     [HttpPut]
-    public IActionResult UpdateWorkout(UpdateWorkoutResource workoutResource)
+    public async Task<ActionResult<GetWorkoutResource>> UpdateWorkout(
+        UpdateWorkoutResource workoutResource,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var domainWorkout = workoutResource.Adapt<Workout>();
-            var existingWorkout = _workoutsRepository.GetWorkout(domainWorkout.Id);
-            if (existingWorkout is not null)
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
             {
-                _workoutsRepository.UpdateWorkout(domainWorkout);
-                return Ok("Workout updated successfully");
+                return Unauthorized();
             }
-            else
+
+            var workout = await _workoutsRepository.UpdateWorkoutHistoryAsync(
+                workoutResource.Id,
+                userId,
+                workoutResource.Date,
+                workoutResource.Type,
+                cancellationToken);
+            if (workout is null)
             {
-                return NotFound($"Workout with ID {domainWorkout.Id} not found");
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
             }
+
+            return Ok(MapWorkoutHistory(workout, includeExercises: true));
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Workout {WorkoutId} could not be updated because it conflicts with existing data.",
+                workoutResource.Id);
+            return Problem(
+                title: "A workout already exists for that date.",
+                statusCode: StatusCodes.Status409Conflict);
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to update the workout.", ex);
+        }
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteWorkout(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var deleted = await _workoutsRepository.DeleteWorkoutHistoryAsync(
+                id,
+                userId,
+                cancellationToken);
+            if (!deleted)
+            {
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return NoContent();
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Workout {WorkoutId} could not be deleted because it is still in use.",
+                id);
+            return Problem(
+                title: "The workout could not be deleted.",
+                detail: "Remove dependent records and try again.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to delete the workout.", ex);
         }
     }
 
@@ -261,6 +382,98 @@ public class WorkoutsController : ControllerBase
                 })
                 .ToList()
         };
+    }
+
+    private static GetWorkoutResource MapWorkoutHistory(
+        Workout workout,
+        bool includeExercises)
+    {
+        var exercises = workout.Exercises ?? [];
+
+        return new GetWorkoutResource
+        {
+            Id = workout.Id,
+            Date = workout.Date ?? DateTime.MinValue,
+            Type = workout.Type,
+            UserId = workout.UserId,
+            ExerciseCount = exercises.Count,
+            TotalVolume = exercises.Sum(GetExerciseVolume),
+            LeadingMuscles = GetLeadingMuscles(exercises),
+            Exercises = includeExercises
+                ? exercises.Select(MapWorkoutHistoryExercise).ToList()
+                : []
+        };
+    }
+
+    private static WorkoutHistoryExerciseResource MapWorkoutHistoryExercise(Exercise exercise)
+        => new()
+        {
+            Id = exercise.Id,
+            TypeId = exercise.TypeId ?? 0,
+            Name = exercise.Type?.Name ?? "Exercise",
+            Series = exercise.Series,
+            Repetitions = exercise.Repetitions,
+            Weight = exercise.Weight,
+            Volume = GetExerciseVolume(exercise),
+            Comments = exercise.Comments,
+            Muscles = GetExerciseMuscles(exercise)
+        };
+
+    private static double GetExerciseVolume(Exercise exercise)
+    {
+        if (exercise.Volume.HasValue)
+        {
+            return exercise.Volume.Value;
+        }
+
+        return (exercise.Series ?? 0)
+            * (exercise.Repetitions ?? 0)
+            * (exercise.Weight ?? 0);
+    }
+
+    private static List<string> GetLeadingMuscles(IEnumerable<Exercise> exercises)
+    {
+        var assignments = exercises
+            .Where(exercise => exercise.Type is not null)
+            .SelectMany(exercise => exercise.Type.MuscleAssignments ?? [])
+            .Where(assignment => assignment.Muscle is not null)
+            .ToList();
+        var rankedAssignments = assignments.Any(assignment =>
+            assignment.Role == ExerciseMuscleRole.Primary)
+            ? assignments.Where(assignment => assignment.Role == ExerciseMuscleRole.Primary)
+            : assignments;
+
+        return rankedAssignments
+            .GroupBy(assignment => new
+            {
+                assignment.MuscleId,
+                assignment.Muscle.Name,
+                assignment.Muscle.SortOrder
+            })
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key.SortOrder)
+            .Select(group => group.Key.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Take(3)
+            .ToList();
+    }
+
+    private static List<string> GetExerciseMuscles(Exercise exercise)
+    {
+        var assignments = exercise.Type?.MuscleAssignments?
+            .Where(assignment => assignment.Muscle is not null)
+            .ToList() ?? [];
+        var selectedAssignments = assignments.Any(assignment =>
+            assignment.Role == ExerciseMuscleRole.Primary)
+            ? assignments.Where(assignment => assignment.Role == ExerciseMuscleRole.Primary)
+            : assignments;
+
+        return selectedAssignments
+            .OrderBy(assignment => assignment.SortOrder)
+            .Select(assignment => assignment.Muscle.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private ObjectResult Unexpected(string title, Exception ex)
