@@ -8,11 +8,9 @@ public class WorkoutsRepository
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> SessionLocks = new();
     private readonly MainDbContext _context;
-    private readonly CurrentUserProvider _userProvider;
-    public WorkoutsRepository(MainDbContext context, CurrentUserProvider userProvider)
+    public WorkoutsRepository(MainDbContext context)
     {
         _context = context;
-        _userProvider = userProvider;
     }
     public Guid AddWorkout(Workout workout)
     {
@@ -20,31 +18,108 @@ public class WorkoutsRepository
         _context.SaveChanges();
         return workout.Id;
     }
-    public Workout GetWorkout(Guid Id)
+    public async Task<WorkoutHistoryPage> GetWorkoutHistoryAsync(
+        string userId,
+        DateOnly? from,
+        DateOnly? to,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken = default)
     {
-        return _context.Workouts.Find(Id);
-    }
-    public List<Workout> GetWorkouts(string userId)
-    {
-        return _context.Workouts
-        .IgnoreQueryFilters()
-        .Where(w => w.UserId == userId)
-        .ToList();
-    }
-    public void UpdateWorkout(Workout workout)
-    {
-        var existingEntity = GetWorkout(workout.Id);
-        if (workout.Date is not null)
+        var query = WorkoutHistoryQuery(userId);
+
+        if (from.HasValue)
         {
-            existingEntity.Date = workout.Date;
-            if (existingEntity.DailySessionKey is not null)
-            {
-                existingEntity.DailySessionKey = WorkoutDailySessionKey.Create(
-                    existingEntity.UserId,
-                    DateOnly.FromDateTime(workout.Date.Value));
-            }
+            var fromDate = from.Value.ToDateTime(TimeOnly.MinValue);
+            query = query.Where(workout => workout.Date >= fromDate);
         }
-        _context.SaveChanges();
+
+        if (to.HasValue)
+        {
+            var toExclusive = to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            query = query.Where(workout => workout.Date < toExclusive);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        query = query
+            .OrderByDescending(workout => workout.Date)
+            .ThenByDescending(workout => workout.Id);
+
+        if (page.HasValue && pageSize.HasValue)
+        {
+            query = query
+                .Skip((page.Value - 1) * pageSize.Value)
+                .Take(pageSize.Value);
+        }
+
+        var workouts = await query
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
+
+        return new WorkoutHistoryPage(workouts, totalCount);
+    }
+
+    public Task<Workout> GetWorkoutHistoryDetailsAsync(
+        Guid workoutId,
+        string userId,
+        CancellationToken cancellationToken = default)
+        => WorkoutHistoryQuery(userId)
+            .FirstOrDefaultAsync(workout => workout.Id == workoutId, cancellationToken);
+
+    public async Task<Workout> UpdateWorkoutHistoryAsync(
+        Guid workoutId,
+        string userId,
+        DateTime date,
+        string type,
+        CancellationToken cancellationToken = default)
+    {
+        var workout = await WorkoutHistoryQuery(userId, asNoTracking: false)
+            .FirstOrDefaultAsync(
+                candidate => candidate.Id == workoutId,
+                cancellationToken);
+        if (workout is null)
+        {
+            return null;
+        }
+
+        workout.Date = date;
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            workout.Type = type.Trim();
+        }
+
+        if (workout.DailySessionKey is not null)
+        {
+            workout.DailySessionKey = WorkoutDailySessionKey.Create(
+                workout.UserId,
+                DateOnly.FromDateTime(date));
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return workout;
+    }
+
+    public async Task<bool> DeleteWorkoutHistoryAsync(
+        Guid workoutId,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var workout = await _context.Workouts
+            .IgnoreQueryFilters()
+            .Where(candidate => candidate.UserId == userId)
+            .Include(candidate => candidate.Exercises)
+            .FirstOrDefaultAsync(
+                candidate => candidate.Id == workoutId,
+                cancellationToken);
+        if (workout is null)
+        {
+            return false;
+        }
+
+        _context.Exercises.RemoveRange(workout.Exercises);
+        _context.Workouts.Remove(workout);
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public Task<Workout> GetWorkoutSessionAsync(
@@ -204,4 +279,23 @@ public class WorkoutsRepository
 
         return asNoTracking ? query.AsNoTracking() : query;
     }
+
+    private IQueryable<Workout> WorkoutHistoryQuery(
+        string userId,
+        bool asNoTracking = true)
+    {
+        var query = _context.Workouts
+            .IgnoreQueryFilters()
+            .Where(workout => workout.UserId == userId)
+            .Include(workout => workout.Exercises)
+                .ThenInclude(exercise => exercise.Type)
+                    .ThenInclude(type => type.MuscleAssignments)
+                        .ThenInclude(assignment => assignment.Muscle);
+
+        return asNoTracking ? query.AsNoTracking() : query;
+    }
 }
+
+public sealed record WorkoutHistoryPage(
+    IReadOnlyList<Workout> Workouts,
+    int TotalCount);

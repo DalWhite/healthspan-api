@@ -39,4 +39,26 @@ public class CorsTests : ApiTestBase
         methods.Should().Contain("GET");
         headers.Should().Contain("authorization");
     }
+
+    [Fact]
+    public async Task GetWorkouts_Exposes_TotalCount_Header_To_The_Frontend()
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/workouts?page=1&pageSize=20");
+        request.Headers.Add("Origin", "https://localhost:5001");
+
+        var response = await Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(
+            "Access-Control-Expose-Headers",
+            out var exposedHeaders).Should().BeTrue();
+        string.Join(",", exposedHeaders!)
+            .Should().ContainEquivalentOf("X-Total-Count");
+        response.Headers.TryGetValues(
+            "X-Total-Count",
+            out var totalCount).Should().BeTrue();
+        totalCount.Should().ContainSingle();
+    }
 }

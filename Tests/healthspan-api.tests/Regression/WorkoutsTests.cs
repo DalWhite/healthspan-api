@@ -20,6 +20,22 @@ public class WorkoutsTests : ApiTestBase
         var workouts = await response.Content.ReadFromJsonAsync<List<GetWorkoutResource>>();
         workouts.Should().NotBeNull();
         workouts!.Count.Should().BeGreaterThanOrEqualTo(2);
+        response.Headers.GetValues("X-Total-Count").Single()
+            .Should().Be(workouts.Count.ToString());
+        workouts.Should().BeInDescendingOrder(workout => workout.Date);
+        var seededWorkouts = workouts
+            .Where(workout =>
+                workout.Id == TestDataSeeder.WorkoutId1
+                || workout.Id == TestDataSeeder.WorkoutId2)
+            .ToList();
+        seededWorkouts.Should().HaveCount(2);
+        seededWorkouts.Should().OnlyContain(workout => workout.ExerciseCount == 1);
+        seededWorkouts.Should().OnlyContain(workout => workout.TotalVolume > 0);
+        var leadingMuscles = seededWorkouts
+            .SelectMany(workout => workout.LeadingMuscles)
+            .ToList();
+        leadingMuscles.Should().Contain("Chest");
+        leadingMuscles.Should().Contain("Upper back");
     }
 
     [Fact]
@@ -32,6 +48,99 @@ public class WorkoutsTests : ApiTestBase
         workout.Should().NotBeNull();
         workout!.Id.Should().Be(TestDataSeeder.WorkoutId1);
         workout.Type.Should().Be("Push");
+        workout.ExerciseCount.Should().Be(1);
+        workout.TotalVolume.Should().Be(2560);
+        workout.LeadingMuscles.Should().ContainSingle("Chest");
+        workout.Exercises.Should().ContainSingle();
+        workout.Exercises[0].Name.Should().Be("Bench Press");
+        workout.Exercises[0].Muscles.Should().ContainSingle("Chest");
+    }
+
+    [Fact]
+    public async Task GetWorkouts_Paginates_Workout_Sessions()
+    {
+        var firstResponse = await Client.GetAsync("/workouts?page=1&pageSize=1");
+        var secondResponse = await Client.GetAsync("/workouts?page=2&pageSize=1");
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var firstPage = await firstResponse.Content.ReadFromJsonAsync<List<GetWorkoutResource>>();
+        var secondPage = await secondResponse.Content.ReadFromJsonAsync<List<GetWorkoutResource>>();
+
+        firstPage.Should().ContainSingle();
+        secondPage.Should().ContainSingle();
+        firstPage![0].Id.Should().NotBe(secondPage![0].Id);
+        int.Parse(firstResponse.Headers.GetValues("X-Total-Count").Single())
+            .Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task GetWorkouts_Filters_By_Date_Range()
+    {
+        var workoutId = Guid.NewGuid();
+        var workoutDate = new DateTime(2042, 6, 15);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = workoutDate,
+                Type = "Future test",
+                UserId = TestDataSeeder.TestUserId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.GetAsync(
+            "/workouts?from=2042-06-15&to=2042-06-15&page=1&pageSize=20");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var workouts = await response.Content.ReadFromJsonAsync<List<GetWorkoutResource>>();
+        workouts.Should().ContainSingle(workout => workout.Id == workoutId);
+        response.Headers.GetValues("X-Total-Count").Single().Should().Be("1");
+    }
+
+    [Fact]
+    public async Task GetWorkouts_Rejects_Invalid_Pagination()
+    {
+        var response = await Client.GetAsync("/workouts?page=0&pageSize=101");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task GetWorkout_Does_Not_Expose_Another_Users_Workout()
+    {
+        var otherUserId = $"history-user-{Guid.NewGuid():N}";
+        var workoutId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"{otherUserId}@healthspan.dev",
+                NormalizedUserName = $"{otherUserId}@healthspan.dev".ToUpperInvariant(),
+                Email = $"{otherUserId}@healthspan.dev",
+                NormalizedEmail = $"{otherUserId}@healthspan.dev".ToUpperInvariant()
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = new DateTime(2042, 7, 10),
+                Type = "Private workout",
+                UserId = otherUserId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.GetAsync($"/workouts/{workoutId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -54,18 +163,197 @@ public class WorkoutsTests : ApiTestBase
     }
 
     [Fact]
-    public async Task UpdateWorkout_Returns_Ok()
+    public async Task UpdateWorkout_Returns_Updated_UserScoped_Workout()
     {
+        var workoutId = Guid.NewGuid();
+        var originalDate = new DateTime(2043, 1, 10);
+        var updatedDate = new DateTime(2043, 1, 12);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = originalDate,
+                Type = "Original",
+                UserId = TestDataSeeder.TestUserId,
+                Exercises =
+                [
+                    new Exercise
+                    {
+                        Id = Guid.NewGuid(),
+                        TypeId = TestDataSeeder.BenchPressTypeId,
+                        Series = 3,
+                        Repetitions = 8,
+                        Weight = 50
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
         var update = new UpdateWorkoutResource
         {
-            Id = TestDataSeeder.WorkoutId1,
-            Date = DateTime.UtcNow.AddDays(-5),
-            UserId = TestDataSeeder.TestUserId
+            Id = workoutId,
+            Date = updatedDate,
+            Type = "Upper body",
+            UserId = "spoofed-user-id"
         };
 
         var response = await Client.PutAsJsonAsync("/workouts", update);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadFromJsonAsync<GetWorkoutResource>();
+        updated.Should().NotBeNull();
+        updated!.Id.Should().Be(workoutId);
+        updated.Date.Should().Be(updatedDate);
+        updated.Type.Should().Be("Upper body");
+        updated.UserId.Should().Be(TestDataSeeder.TestUserId);
+        updated.Exercises.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task UpdateWorkout_Rejects_Invalid_Identity_And_Date()
+    {
+        var response = await Client.PutAsJsonAsync(
+            "/workouts",
+            new UpdateWorkoutResource());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task UpdateWorkout_Does_Not_Modify_Another_Users_Workout()
+    {
+        var otherUserId = $"update-workout-user-{Guid.NewGuid():N}";
+        var workoutId = Guid.NewGuid();
+        var originalDate = new DateTime(2043, 2, 10);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"{otherUserId}@healthspan.dev",
+                NormalizedUserName = $"{otherUserId}@healthspan.dev".ToUpperInvariant(),
+                Email = $"{otherUserId}@healthspan.dev",
+                NormalizedEmail = $"{otherUserId}@healthspan.dev".ToUpperInvariant()
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = originalDate,
+                Type = "Private",
+                UserId = otherUserId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.PutAsJsonAsync(
+            "/workouts",
+            new UpdateWorkoutResource
+            {
+                Id = workoutId,
+                Date = originalDate.AddDays(1),
+                Type = "Changed"
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var verificationScope = Factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<MainDbContext>();
+        var stored = await verificationDb.Workouts
+            .IgnoreQueryFilters()
+            .SingleAsync(workout => workout.Id == workoutId);
+        stored.Date.Should().Be(originalDate);
+        stored.Type.Should().Be("Private");
+    }
+
+    [Fact]
+    public async Task DeleteWorkout_Removes_Workout_And_Exercise_Records()
+    {
+        var workoutId = Guid.NewGuid();
+        var exerciseId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = new DateTime(2043, 3, 10),
+                Type = "Delete me",
+                UserId = TestDataSeeder.TestUserId,
+                Exercises =
+                [
+                    new Exercise
+                    {
+                        Id = exerciseId,
+                        TypeId = TestDataSeeder.SquatTypeId,
+                        Series = 4,
+                        Repetitions = 6,
+                        Weight = 80
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.DeleteAsync($"/workouts/{workoutId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verificationScope = Factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<MainDbContext>();
+        (await verificationDb.Workouts
+            .IgnoreQueryFilters()
+            .AnyAsync(workout => workout.Id == workoutId))
+            .Should().BeFalse();
+        (await verificationDb.Exercises
+            .IgnoreQueryFilters()
+            .AnyAsync(exercise => exercise.Id == exerciseId))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DeleteWorkout_Does_Not_Remove_Another_Users_Workout()
+    {
+        var otherUserId = $"delete-workout-user-{Guid.NewGuid():N}";
+        var workoutId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"{otherUserId}@healthspan.dev",
+                NormalizedUserName = $"{otherUserId}@healthspan.dev".ToUpperInvariant(),
+                Email = $"{otherUserId}@healthspan.dev",
+                NormalizedEmail = $"{otherUserId}@healthspan.dev".ToUpperInvariant()
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = new DateTime(2043, 4, 10),
+                Type = "Private",
+                UserId = otherUserId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.DeleteAsync($"/workouts/{workoutId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var verificationScope = Factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<MainDbContext>();
+        (await verificationDb.Workouts
+            .IgnoreQueryFilters()
+            .AnyAsync(workout => workout.Id == workoutId))
+            .Should().BeTrue();
     }
 
     [Fact]
