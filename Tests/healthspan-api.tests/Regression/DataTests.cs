@@ -8,7 +8,9 @@ namespace healthspan_api.tests.Regression;
 
 public class DataTests : ApiTestBase
 {
-    public DataTests(HealthspanApiFactory factory) : base(factory) { }
+    public DataTests(HealthspanApiFactory factory) : base(factory)
+    {
+    }
 
     [Fact]
     public async Task GetImportTemplate_Returns_CsvFile()
@@ -45,7 +47,9 @@ public class DataTests : ApiTestBase
     [Fact]
     public async Task ImportCsv_WithValidCsv_Returns_Ok()
     {
-        var csv = "Date,Type,Exercise,Series,Repetitions,Weight,Comments\n2025-06-01,Push,Bench Press,4,10,80,Test row";
+        const string csv =
+            "Date,ExerciseType,Series,Reps,Weight,AdditionalComments\n" +
+            "01/06/25,Bench Press,4,10,80,Test row";
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes(csv));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
@@ -53,7 +57,6 @@ public class DataTests : ApiTestBase
 
         var response = await Client.PostAsync("/data/import", content);
 
-        // May be Ok or BadRequest depending on CSV parsing — just verify it doesn't 500
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
