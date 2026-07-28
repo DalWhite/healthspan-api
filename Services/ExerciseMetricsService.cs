@@ -106,20 +106,26 @@ public class ExerciseMetricsService
     {
         var typeExercises = _exercisesRepository
             .GetExercisesByType(exerciseTypeId, userId, tag)
-            .OrderBy(e => e.Workout.Date);
+            .Where(exercise => exercise.Workout?.Date.HasValue == true)
+            .OrderBy(exercise => exercise.Workout.Date)
+            .ToList();
         var result = new GetExerciseTypeTrends() { Points = new List<DataPoint>() };
 
-        // Group exercises by session (e.g., by date) and calculate max RM per session
+        // A trend point represents a workout session, not an individual exercise row.
         var maxRMPerSession = typeExercises
-            .Where(exercise =>
-                exercise.Workout?.Date.HasValue == true
-                && exercise.MaxRepetition.HasValue)
-            .GroupBy(e => e.Workout.Date)
-            .Select(g => new DataPoint
+            .Where(exercise => exercise.MaxRepetition.HasValue)
+            .GroupBy(exercise => new
             {
-                Data = (float)g.Max(e => e.MaxRepetition!.Value),
-                Time = g.Key!.Value
+                exercise.WorkoutId,
+                Date = exercise.Workout.Date!.Value
             })
+            .Select(session => new DataPoint
+            {
+                Data = (float)session.Max(
+                    exercise => exercise.MaxRepetition!.Value),
+                Time = session.Key.Date
+            })
+            .OrderBy(point => point.Time)
             .ToList();
 
         switch (type)
@@ -130,26 +136,36 @@ public class ExerciseMetricsService
 
             case TrendKpiType.Volume:
                 result.Points.AddRange(typeExercises
-                    .Where(exercise =>
-                        exercise.Workout?.Date.HasValue == true
-                        && exercise.Volume.HasValue)
-                    .Select(exercise => new DataPoint
+                    .Where(exercise => exercise.Volume.HasValue)
+                    .GroupBy(exercise => new
                     {
-                        Data = exercise.Volume!.Value,
-                        Time = exercise.Workout.Date!.Value
-                    }));
+                        exercise.WorkoutId,
+                        Date = exercise.Workout.Date!.Value
+                    })
+                    .Select(session => new DataPoint
+                    {
+                        Data = session.Sum(
+                            exercise => exercise.Volume!.Value),
+                        Time = session.Key.Date
+                    })
+                    .OrderBy(point => point.Time));
                 break;
 
             case TrendKpiType.Intensity:
                 result.Points.AddRange(typeExercises
-                    .Where(exercise =>
-                        exercise.Workout?.Date.HasValue == true
-                        && exercise.Intensity.HasValue)
-                    .Select(exercise => new DataPoint
+                    .Where(exercise => exercise.Intensity.HasValue)
+                    .GroupBy(exercise => new
                     {
-                        Data = exercise.Intensity!.Value,
-                        Time = exercise.Workout.Date!.Value
-                    }));
+                        exercise.WorkoutId,
+                        Date = exercise.Workout.Date!.Value
+                    })
+                    .Select(session => new DataPoint
+                    {
+                        Data = (float)session.Average(
+                            exercise => exercise.Intensity!.Value),
+                        Time = session.Key.Date
+                    })
+                    .OrderBy(point => point.Time));
                 break;
         }
         return result;

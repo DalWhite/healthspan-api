@@ -10,6 +10,7 @@ public class ExerciseTypesController : ControllerBase
 {
     private readonly ExerciseTypesRepository _exerciseTypeRepository;
     private readonly CurrentUserProvider _userProvider;
+    private readonly TrainingAccessService _trainingAccessService;
     private readonly UsersRepository _usersRepository;
     private readonly MuscleRepository _muscleRepository;
     private readonly ILogger<ExerciseTypesController> _logger;
@@ -17,12 +18,14 @@ public class ExerciseTypesController : ControllerBase
     public ExerciseTypesController(
         ExerciseTypesRepository exerciseTypeRepository,
         CurrentUserProvider userProvider,
+        TrainingAccessService trainingAccessService,
         UsersRepository usersRepository,
         MuscleRepository muscleRepository,
         ILogger<ExerciseTypesController> logger)
     {
         _exerciseTypeRepository = exerciseTypeRepository;
         _userProvider = userProvider;
+        _trainingAccessService = trainingAccessService;
         _usersRepository = usersRepository;
         _muscleRepository = muscleRepository;
         _logger = logger;
@@ -33,7 +36,21 @@ public class ExerciseTypesController : ControllerBase
     {
         try
         {
-            var resolvedUserId = ResolveUserId(userId);
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var resolvedUserId = string.IsNullOrWhiteSpace(userId)
+                ? requesterUserId
+                : userId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    resolvedUserId))
+            {
+                return Forbid();
+            }
             var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
             var response = domainExerciseTypes
                 .Select(exerciseType => MapExerciseType(exerciseType, resolvedUserId, includeVariations: true))
@@ -84,7 +101,9 @@ public class ExerciseTypesController : ControllerBase
                 return Ok(MapExerciseType(domainExerciseType, null, includeVariations: true));
             }
 
-            return NotFound($"ExerciseType with ID {id} not found");
+            return Problem(
+                title: "Exercise type not found.",
+                statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
         {
@@ -106,7 +125,9 @@ public class ExerciseTypesController : ControllerBase
             var existingExerciseType = _exerciseTypeRepository.GetExerciseType(exerciseTypeResource.Id);
             if (existingExerciseType is null)
             {
-                return NotFound($"ExerciseType with ID {exerciseTypeResource.Id} not found");
+                return Problem(
+                    title: "Exercise type not found.",
+                    statusCode: StatusCodes.Status404NotFound);
             }
 
             var domainExerciseType = MapDomainExerciseType(exerciseTypeResource);
@@ -153,7 +174,9 @@ public class ExerciseTypesController : ControllerBase
 
             if (!_exerciseTypeRepository.SetFavourite(id, user, resource.IsFavourite))
             {
-                return NotFound($"ExerciseType with ID {id} not found");
+                return Problem(
+                    title: "Exercise type not found.",
+                    statusCode: StatusCodes.Status404NotFound);
             }
 
             return NoContent();
@@ -210,18 +233,21 @@ public class ExerciseTypesController : ControllerBase
 
         if (normalizedAssignments.Count == 0)
         {
-            return BadRequest("At least one muscle assignment is required.");
+            return ValidationProblem(
+                "At least one muscle assignment is required.");
         }
 
         if (!normalizedAssignments.Any(assignment => string.Equals(assignment.Role, nameof(ExerciseMuscleRole.Primary), StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("At least one primary muscle assignment is required.");
+            return ValidationProblem(
+                "At least one primary muscle assignment is required.");
         }
 
         if (normalizedAssignments.Any(assignment => !string.Equals(assignment.Role, nameof(ExerciseMuscleRole.Primary), StringComparison.OrdinalIgnoreCase) &&
                                                     !string.Equals(assignment.Role, nameof(ExerciseMuscleRole.Secondary), StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Muscle assignment role must be Primary or Secondary.");
+            return ValidationProblem(
+                "Muscle assignment role must be Primary or Secondary.");
         }
 
         var duplicateMuscleIds = normalizedAssignments
@@ -232,22 +258,24 @@ public class ExerciseTypesController : ControllerBase
 
         if (duplicateMuscleIds.Count > 0)
         {
-            return BadRequest("An exercise cannot assign the same muscle more than once.");
+            return ValidationProblem(
+                "An exercise cannot assign the same muscle more than once.");
         }
 
         var allExist = await _muscleRepository.AllExistAsync(normalizedAssignments.Select(assignment => assignment.MuscleId));
         if (!allExist)
         {
-            return BadRequest("One or more selected muscles do not exist.");
+            return ValidationProblem(
+                "One or more selected muscles do not exist.");
         }
 
         return null;
     }
 
-    private string ResolveUserId(string userId)
-        => string.IsNullOrWhiteSpace(userId)
-            ? _userProvider.GetCurrentUserId() ?? string.Empty
-            : userId;
+    private ObjectResult ValidationProblem(string title)
+        => Problem(
+            title: title,
+            statusCode: StatusCodes.Status400BadRequest);
 
     private static bool IsFavouriteExType(ExerciseType exerciseType, string userId)
     {

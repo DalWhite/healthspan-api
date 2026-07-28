@@ -173,6 +173,12 @@ namespace healthspan_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<double?>("AddedWeight")
+                        .HasColumnType("double");
+
+                    b.Property<double?>("BodyWeight")
+                        .HasColumnType("double");
+
                     b.Property<string>("Comments")
                         .HasColumnType("longtext");
 

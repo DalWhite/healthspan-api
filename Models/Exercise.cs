@@ -4,6 +4,8 @@ public class Exercise
     public int? Series { get; set; }
     public int? Repetitions { get; set; }
     public double? Weight { get; set; }
+    public double? BodyWeight { get; set; }
+    public double? AddedWeight { get; set; }
     public double? MaxRepetition { get; set; }
     public int? Volume { get; set; }
     public int? Intensity { get; set; }

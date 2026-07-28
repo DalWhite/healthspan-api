@@ -1,8 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 
-public class UpdateWorkoutResource : BaseWorkoutResource, IValidatableObject
+public class UpdateWorkoutResource : IValidatableObject
 {
     public Guid Id { get; set; }
+    public DateTime Date { get; set; }
     [StringLength(100)]
     public string Type { get; set; }
 

@@ -11,19 +11,43 @@ public class RoutinesController : ControllerBase
     private readonly RoutinesRepository _routinesRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly CurrentUserProvider _userProvider;
+    private readonly TrainingAccessService _trainingAccessService;
+    private readonly ILogger<RoutinesController> _logger;
 
-    public RoutinesController(RoutinesRepository routineRepository, CurrentUserProvider userProvider, ExerciseTypesRepository exerciseTypesRepository)
+    public RoutinesController(
+        RoutinesRepository routineRepository,
+        CurrentUserProvider userProvider,
+        TrainingAccessService trainingAccessService,
+        ExerciseTypesRepository exerciseTypesRepository,
+        ILogger<RoutinesController> logger)
     {
         _routinesRepository = routineRepository;
         _userProvider = userProvider;
+        _trainingAccessService = trainingAccessService;
         _exerciseTypesRepository = exerciseTypesRepository;
+        _logger = logger;
     }
     [HttpGet]
     public ActionResult<List<GetRoutineResource>> GetRoutines(string traineeId)
     {
         try
         {
-            var userId = string.IsNullOrEmpty(traineeId) ? _userProvider.GetCurrentUserId() : traineeId;
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
+            }
+
             var domainRoutines = _routinesRepository.GetRoutines(userId);
             var response = MapToGetRoutineResources(domainRoutines);
 
@@ -31,7 +55,7 @@ public class RoutinesController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to load routines.", ex);
         }
     }
 
@@ -40,7 +64,22 @@ public class RoutinesController : ControllerBase
     {
         try
         {
-            routineResource.UserId ??= _userProvider.GetCurrentUserId();
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            routineResource.UserId = string.IsNullOrWhiteSpace(
+                routineResource.UserId)
+                    ? requesterUserId
+                    : routineResource.UserId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    routineResource.UserId))
+            {
+                return Forbid();
+            }
 
             var workoutTemplates = routineResource.WorkoutTemplates
                 .Select(templateResource =>
@@ -69,7 +108,7 @@ public class RoutinesController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to create the routine.", ex);
         }
     }
     private List<GetRoutineResource> MapToGetRoutineResources(List<Routine> routines)
@@ -97,4 +136,11 @@ public class RoutinesController : ControllerBase
         return routineResources;
     }
 
+    private ObjectResult Unexpected(string title, Exception ex)
+    {
+        _logger.LogError(ex, "{Title}", title);
+        return Problem(
+            title: title,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 }

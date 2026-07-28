@@ -40,6 +40,71 @@ public class WorkoutsTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Workout_TargetUser_Must_Be_Self_Or_Assigned_Trainee()
+    {
+        var unrelatedUserId = $"unrelated-workout-{Guid.NewGuid():N}";
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = unrelatedUserId,
+                UserName = $"{unrelatedUserId}@healthspan.dev",
+                Email = $"{unrelatedUserId}@healthspan.dev"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var getResponse = await Client.GetAsync(
+            $"/workouts?traineeId={unrelatedUserId}");
+        var postResponse = await Client.PostAsJsonAsync(
+            "/workouts",
+            new AddWorkoutResource
+            {
+                Date = new DateTime(2096, 4, 10),
+                Type = "Unauthorized",
+                UserId = unrelatedUserId
+            });
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Assigned_Trainer_Can_Prepare_Trainee_Workout()
+    {
+        var traineeId = $"assigned-trainee-{Guid.NewGuid():N}";
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var trainer = await db.Users.FindAsync(
+                TestDataSeeder.TestUserId);
+            db.Users.Add(new User
+            {
+                Id = traineeId,
+                UserName = $"{traineeId}@healthspan.dev",
+                Email = $"{traineeId}@healthspan.dev",
+                Trainer = trainer
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.PostAsJsonAsync(
+            "/workouts",
+            new AddWorkoutResource
+            {
+                Date = new DateTime(2096, 4, 11),
+                Type = "Coached",
+                UserId = traineeId
+            });
+        var workout = await response.Content
+            .ReadFromJsonAsync<GetWorkoutResource>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        workout!.UserId.Should().Be(traineeId);
+    }
+
+    [Fact]
     public async Task GetWorkout_ById_Returns_Correct_Workout()
     {
         var response = await Client.GetAsync($"/workouts/{TestDataSeeder.WorkoutId1}");
@@ -399,7 +464,7 @@ public class WorkoutsTests : ApiTestBase
             await db.SaveChangesAsync();
         }
 
-        var update = new UpdateWorkoutResource
+        var update = new
         {
             Id = workoutId,
             Date = updatedDate,
@@ -568,6 +633,8 @@ public class WorkoutsTests : ApiTestBase
         var response = await Client.GetAsync($"/workouts/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
     }
 
     [Fact]

@@ -13,6 +13,7 @@ public class WorkoutsController : ControllerBase
     private readonly ExercisesRepository _exercisesRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly CurrentUserProvider _userProvider;
+    private readonly TrainingAccessService _trainingAccessService;
     private readonly WeeklyTrainingSummaryService _weeklyTrainingSummaryService;
     private readonly ILogger<WorkoutsController> _logger;
 
@@ -21,6 +22,7 @@ public class WorkoutsController : ControllerBase
         ExercisesRepository exercisesRepository,
         ExerciseTypesRepository exerciseTypesRepository,
         CurrentUserProvider userProvider,
+        TrainingAccessService trainingAccessService,
         WeeklyTrainingSummaryService weeklyTrainingSummaryService,
         ILogger<WorkoutsController> logger)
     {
@@ -28,6 +30,7 @@ public class WorkoutsController : ControllerBase
         _exercisesRepository = exercisesRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _userProvider = userProvider;
+        _trainingAccessService = trainingAccessService;
         _weeklyTrainingSummaryService = weeklyTrainingSummaryService;
         _logger = logger;
     }
@@ -63,12 +66,20 @@ public class WorkoutsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var userId = string.IsNullOrEmpty(traineeId)
-                ? _userProvider.GetCurrentUserId()
-                : traineeId;
-            if (string.IsNullOrWhiteSpace(userId))
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
             {
                 return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
             }
 
             var shouldPaginate = page.HasValue || pageSize.HasValue;
@@ -102,12 +113,20 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = string.IsNullOrWhiteSpace(workoutResource.UserId)
-                ? _userProvider.GetCurrentUserId()
-                : workoutResource.UserId;
-            if (string.IsNullOrWhiteSpace(userId))
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
             {
                 return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(workoutResource.UserId)
+                ? requesterUserId
+                : workoutResource.UserId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
             }
 
             var result = await _workoutsRepository
@@ -249,13 +268,17 @@ public class WorkoutsController : ControllerBase
                 cancellationToken);
             if (workout is null)
             {
-                return NotFound($"Workout with ID {id} not found");
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
             }
 
             var exerciseType = _exerciseTypesRepository.GetExerciseType(resource.TypeId);
             if (exerciseType is null)
             {
-                return BadRequest($"ExerciseType with ID {resource.TypeId} not found");
+                return Problem(
+                    title: "Exercise type not found.",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             var recentTypeIds = await _workoutsRepository.GetRecentExerciseTypeIdsAsync(
@@ -271,6 +294,12 @@ public class WorkoutsController : ControllerBase
                 Series = resource.Series,
                 Repetitions = resource.Repetitions,
                 Weight = (double)resource.Weight,
+                BodyWeight = resource.BodyWeight.HasValue
+                    ? (double?)resource.BodyWeight.Value
+                    : null,
+                AddedWeight = resource.AddedWeight.HasValue
+                    ? (double?)resource.AddedWeight.Value
+                    : null,
                 Comments = resource.Comments,
                 Tags = ExerciseTagNormalizer.Normalize(resource.Tags),
                 Type = exerciseType
@@ -309,7 +338,9 @@ public class WorkoutsController : ControllerBase
                 return Ok(MapWorkoutHistory(domainWorkout, includeExercises: true));
             }
 
-            return NotFound($"Workout with ID {id} not found");
+            return Problem(
+                title: "Workout not found.",
+                statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
         {
@@ -436,6 +467,12 @@ public class WorkoutsController : ControllerBase
                     Series = exercise.Series,
                     Repetitions = exercise.Repetitions,
                     Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
+                    BodyWeight = exercise.BodyWeight.HasValue
+                        ? (decimal?)exercise.BodyWeight.Value
+                        : null,
+                    AddedWeight = exercise.AddedWeight.HasValue
+                        ? (decimal?)exercise.AddedWeight.Value
+                        : null,
                     Comments = exercise.Comments,
                     Tags = ExerciseTagNormalizer.Normalize(exercise.Tags)
                 })
@@ -473,6 +510,8 @@ public class WorkoutsController : ControllerBase
             Series = exercise.Series,
             Repetitions = exercise.Repetitions,
             Weight = exercise.Weight,
+            BodyWeight = exercise.BodyWeight,
+            AddedWeight = exercise.AddedWeight,
             Volume = GetExerciseVolume(exercise),
             Comments = exercise.Comments,
             Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
