@@ -6,6 +6,7 @@ public class StartWorkoutSessionResource : IValidatableObject
 
     [StringLength(100)]
     public string Type { get; set; } = "Training";
+    public bool CreateNew { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {

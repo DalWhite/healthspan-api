@@ -26,7 +26,7 @@ public sealed class WeeklyTrainingSummaryService(
         new("hamstrings", "Hamstrings", "back", "Legs"),
         new("adductors", "Adductors", "front", "Legs"),
         new("abductors", "Abductors", "back", "Legs"),
-        new("calves", "Calves", "back", "Legs")
+        new("calves", "Calves", "both", "Legs")
     ];
 
     public async Task<WeeklyTrainingSummaryResource> GetAsync(
@@ -45,8 +45,29 @@ public sealed class WeeklyTrainingSummaryService(
             .Take(weekLimit)
             .Select(group => BuildWeek(group.Key, group))
             .ToList();
+        var activityStart = DateTime.UtcNow.Date.AddDays(-34);
+        var activityDays = workouts
+            .Where(workout =>
+                workout.Date.HasValue
+                && workout.Date.Value.Date >= activityStart
+                && workout.Date.Value.Date <= DateTime.UtcNow.Date
+                && workout.Exercises?.Count > 0)
+            .GroupBy(workout => workout.Date!.Value.Date)
+            .OrderBy(group => group.Key)
+            .Select(group => new TrainingDayActivityResource
+            {
+                Date = group.Key,
+                WorkoutCount = group.Count(),
+                ExerciseCount = group.Sum(workout =>
+                    workout.Exercises?.Count ?? 0)
+            })
+            .ToList();
 
-        return new WeeklyTrainingSummaryResource { Weeks = weeks };
+        return new WeeklyTrainingSummaryResource
+        {
+            Weeks = weeks,
+            ActivityDays = activityDays
+        };
     }
 
     private static WeeklyTrainingWeekResource BuildWeek(
