@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Services;
 using Xunit;
 
 namespace healthspan_api.tests.Regression;
@@ -160,6 +161,122 @@ public class WorkoutsTests : ApiTestBase
         createdWorkout.Should().NotBeNull();
         createdWorkout!.Id.Should().NotBe(Guid.Empty);
         createdWorkout.Type.Should().Be("Legs");
+    }
+
+    [Fact]
+    public async Task AddWorkout_Reuses_The_First_Workout_Of_The_Day()
+    {
+        var date = new DateTime(2045, 5, 10, 9, 30, 0);
+        var firstResponse = await Client.PostAsJsonAsync(
+            "/workouts",
+            new AddWorkoutResource
+            {
+                Date = date,
+                UserId = TestDataSeeder.TestUserId,
+                Type = "Morning training"
+            });
+        var first = await firstResponse.Content
+            .ReadFromJsonAsync<GetWorkoutResource>();
+
+        var secondResponse = await Client.PostAsJsonAsync(
+            "/workouts",
+            new AddWorkoutResource
+            {
+                Date = date.AddHours(8),
+                UserId = TestDataSeeder.TestUserId,
+                Type = "Duplicate attempt"
+            });
+        var second = await secondResponse.Content
+            .ReadFromJsonAsync<GetWorkoutResource>();
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        second!.Id.Should().Be(first!.Id);
+        second.Type.Should().Be("Morning training");
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+        var stored = await db.Workouts
+            .IgnoreQueryFilters()
+            .Where(workout =>
+                workout.UserId == TestDataSeeder.TestUserId
+                && workout.Date >= date.Date
+                && workout.Date < date.Date.AddDays(1))
+            .ToListAsync();
+        stored.Should().ContainSingle();
+        stored[0].DailySessionKey.Should().HaveLength(64);
+    }
+
+    [Fact]
+    public async Task AddWorkout_Prefers_The_First_LegacyWorkout_WithAnExercise()
+    {
+        var date = new DateTime(2045, 6, 10);
+        var emptyShellId = Guid.Parse(
+            "10000000-0000-0000-0000-000000000001");
+        var firstExerciseWorkoutId = Guid.Parse(
+            "20000000-0000-0000-0000-000000000002");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Workouts.AddRange(
+                new Workout
+                {
+                    Id = emptyShellId,
+                    Date = date.AddHours(7),
+                    Type = "Empty shell",
+                    UserId = TestDataSeeder.TestUserId,
+                    DailySessionKey = WorkoutDailySessionKey.Create(
+                        TestDataSeeder.TestUserId,
+                        DateOnly.FromDateTime(date))
+                },
+                new Workout
+                {
+                    Id = firstExerciseWorkoutId,
+                    Date = date.AddHours(8),
+                    Type = "First exercise",
+                    UserId = TestDataSeeder.TestUserId,
+                    Exercises =
+                    [
+                        new Exercise
+                        {
+                            Id = Guid.NewGuid(),
+                            TypeId = TestDataSeeder.BenchPressTypeId,
+                            Series = 3,
+                            Repetitions = 8,
+                            Weight = 80
+                        }
+                    ]
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.PostAsJsonAsync(
+            "/workouts",
+            new AddWorkoutResource
+            {
+                Date = date.AddHours(20),
+                UserId = TestDataSeeder.TestUserId,
+                Type = "Another"
+            });
+        var workout = await response.Content
+            .ReadFromJsonAsync<GetWorkoutResource>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        workout!.Id.Should().Be(firstExerciseWorkoutId);
+        workout.Type.Should().Be("First exercise");
+
+        using var verificationScope = Factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider
+            .GetRequiredService<MainDbContext>();
+        (await verificationDb.Workouts
+            .IgnoreQueryFilters()
+            .SingleAsync(candidate => candidate.Id == firstExerciseWorkoutId))
+            .DailySessionKey.Should().HaveLength(64);
+        (await verificationDb.Workouts
+            .IgnoreQueryFilters()
+            .SingleAsync(candidate => candidate.Id == emptyShellId))
+            .DailySessionKey.Should().BeNull();
     }
 
     [Fact]

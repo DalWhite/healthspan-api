@@ -1,4 +1,3 @@
-using Mapster;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -94,19 +93,40 @@ public class WorkoutsController : ControllerBase
     }
 
     [HttpPost]
-    public IActionResult AddWorkout(AddWorkoutResource workoutResource)
+    public async Task<ActionResult<GetWorkoutResource>> AddWorkout(
+        AddWorkoutResource workoutResource,
+        CancellationToken cancellationToken)
     {
         try
         {
-            workoutResource.UserId ??= _userProvider.GetCurrentUserId();
-            var domainWorkout = workoutResource.Adapt<Workout>();
-            var workoutId = _workoutsRepository.AddWorkout(domainWorkout);
-            var response = domainWorkout.Adapt<GetWorkoutResource>();
-            return CreatedAtAction(nameof(GetWorkout), new { id = workoutId }, response);
+            var userId = string.IsNullOrWhiteSpace(workoutResource.UserId)
+                ? _userProvider.GetCurrentUserId()
+                : workoutResource.UserId;
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var result = await _workoutsRepository
+                .GetOrCreateWorkoutSessionAsync(
+                    userId,
+                    DateOnly.FromDateTime(workoutResource.Date),
+                    workoutResource.Type,
+                    cancellationToken);
+            var response = MapWorkoutHistory(
+                result.Workout,
+                includeExercises: true);
+
+            return result.Created
+                ? CreatedAtAction(
+                    nameof(GetWorkout),
+                    new { id = result.Workout.Id },
+                    response)
+                : Ok(response);
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            return Unexpected("Failed to prepare the workout.", ex);
         }
     }
 
