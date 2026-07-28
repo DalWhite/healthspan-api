@@ -3,6 +3,8 @@
 public interface IBloodTestDocumentStorage
 {
     Task<StoredBloodTestDocument?> StoreAsync(string userId, IFormFile file, CancellationToken cancellationToken);
+    Task<byte[]?> ReadAsync(StoredBloodTestDocument document, CancellationToken cancellationToken);
+    Task DeleteAsync(StoredBloodTestDocument document, CancellationToken cancellationToken);
 }
 
 public class StoredBloodTestDocument

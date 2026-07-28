@@ -214,6 +214,102 @@ public class BloodAnalyticsService
         return true;
     }
 
+    public async Task<bool> DeleteBloodTestAsync(
+        string userId,
+        Guid bloodTestId,
+        CancellationToken cancellationToken)
+    {
+        var bloodTest = await _context.BloodTests
+            .FirstOrDefaultAsync(
+                test => test.Id == bloodTestId
+                        && test.UserId == userId,
+                cancellationToken);
+
+        if (bloodTest is null)
+        {
+            return false;
+        }
+
+        var storedDocument =
+            string.IsNullOrWhiteSpace(bloodTest.SourceBlobName)
+            || string.IsNullOrWhiteSpace(
+                bloodTest.SourceBlobContainer)
+                ? null
+                : new StoredBloodTestDocument
+                {
+                    ContainerName =
+                        bloodTest.SourceBlobContainer,
+                    BlobName = bloodTest.SourceBlobName,
+                    BlobUri = bloodTest.SourceBlobUri
+                              ?? string.Empty
+                };
+
+        _context.BloodTests.Remove(bloodTest);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (storedDocument is not null)
+        {
+            try
+            {
+                await _documentStorage.DeleteAsync(
+                    storedDocument,
+                    cancellationToken);
+            }
+            catch
+            {
+                // The health record is already removed. Storage cleanup is
+                // best effort so a transient provider failure cannot make
+                // the client report a false deletion failure.
+            }
+        }
+
+        return true;
+    }
+
+    public async Task<BloodTestDocumentContent?> GetBloodTestDocumentAsync(
+        string userId,
+        Guid bloodTestId,
+        CancellationToken cancellationToken)
+    {
+        var bloodTest = await _context.BloodTests
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                test => test.Id == bloodTestId
+                        && test.UserId == userId,
+                cancellationToken);
+
+        if (bloodTest is null
+            || string.IsNullOrWhiteSpace(bloodTest.SourceBlobContainer)
+            || string.IsNullOrWhiteSpace(bloodTest.SourceBlobName))
+        {
+            return null;
+        }
+
+        var content = await _documentStorage.ReadAsync(
+            new StoredBloodTestDocument
+            {
+                ContainerName = bloodTest.SourceBlobContainer,
+                BlobName = bloodTest.SourceBlobName,
+                BlobUri = bloodTest.SourceBlobUri ?? string.Empty
+            },
+            cancellationToken);
+
+        return content is null
+            ? null
+            : new BloodTestDocumentContent
+            {
+                Content = content,
+                ContentType = string.IsNullOrWhiteSpace(
+                    bloodTest.SourceContentType)
+                    ? "application/octet-stream"
+                    : bloodTest.SourceContentType,
+                FileName = string.IsNullOrWhiteSpace(
+                    bloodTest.SourceFileName)
+                    ? "blood-test-report"
+                    : bloodTest.SourceFileName
+            };
+    }
+
     private static List<OcrMarkerResult> SelectMarkers(List<OcrMarkerResult> ocrMarkers, MarkerNormalizationResult normalization)
     {
         if (!normalization.Success || normalization.Markers.Count == 0)
@@ -721,4 +817,11 @@ public class LatestMarkerSnapshot
     public DateTime TestDate { get; set; }
     public decimal? ReferenceMinValue { get; set; }
     public decimal? ReferenceMaxValue { get; set; }
+}
+
+public sealed class BloodTestDocumentContent
+{
+    public byte[] Content { get; init; } = Array.Empty<byte>();
+    public string ContentType { get; init; } = "application/octet-stream";
+    public string FileName { get; init; } = "blood-test-report";
 }

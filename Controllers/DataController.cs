@@ -12,12 +12,20 @@ public class DataController : ControllerBase
     private readonly CurrentUserProvider _userProvider;
     private readonly ExercisesRepository _exercisesRepository;
     private readonly WorkoutsRepository _workoutsRepository;
-    public DataController(CsvService csvService, CurrentUserProvider userProvider, ExercisesRepository exercisesRepository, WorkoutsRepository workoutsRepository)
+    private readonly UserDataExportService _exportService;
+
+    public DataController(
+        CsvService csvService,
+        CurrentUserProvider userProvider,
+        ExercisesRepository exercisesRepository,
+        WorkoutsRepository workoutsRepository,
+        UserDataExportService exportService)
     {
         _csvService = csvService;
         _userProvider = userProvider;
         _exercisesRepository = exercisesRepository;
         _workoutsRepository = workoutsRepository;
+        _exportService = exportService;
     }
 
     [HttpGet("import/template")]
@@ -26,6 +34,21 @@ public class DataController : ControllerBase
         var content = _csvService.CreateCsvImportTemplate();
         return File(content, "text/csv", "exercisesImportTemplate.csv");
     }
+
+    [HttpGet("export")]
+    public async Task<IActionResult> ExportUserData(
+        CancellationToken cancellationToken)
+    {
+        var userId = _userProvider.GetCurrentUserId();
+        var content = await _exportService.CreateExportAsync(
+            userId,
+            cancellationToken);
+        return File(
+            content,
+            "application/json",
+            $"healthspan-export-{DateTime.UtcNow:yyyyMMdd}.json");
+    }
+
     [HttpPost("import")]
     public async Task<IActionResult> ImportExercisesCsvData(
         IFormFile file,

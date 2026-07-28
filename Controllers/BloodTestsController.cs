@@ -167,6 +167,40 @@ public class BloodTestsController : ControllerBase
         }
     }
 
+    [HttpGet("{id}/document")]
+    public async Task<IActionResult> GetBloodTestDocument(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var userId = _currentUserProvider.GetCurrentUserId();
+        var document =
+            await _bloodAnalyticsService.GetBloodTestDocumentAsync(
+                userId,
+                id,
+                cancellationToken);
+
+        return document is null
+            ? NotFound()
+            : File(document.Content, document.ContentType);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteBloodTest(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var userId = _currentUserProvider.GetCurrentUserId();
+        var deleted =
+            await _bloodAnalyticsService.DeleteBloodTestAsync(
+                userId,
+                id,
+                cancellationToken);
+
+        return deleted
+            ? NoContent()
+            : NotFound();
+    }
+
     [HttpGet("markers/latest")]
     public ActionResult<List<LatestMarkerSnapshotResource>> GetLatestMarkers(string? userId)
     {

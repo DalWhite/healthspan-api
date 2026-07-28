@@ -41,7 +41,9 @@ public class WorkoutsController : ControllerBase
         DateOnly? to,
         int? page,
         int? pageSize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string search = "",
+        string tag = "")
     {
         try
         {
@@ -91,7 +93,9 @@ public class WorkoutsController : ControllerBase
                 to,
                 normalizedPage,
                 normalizedPageSize,
-                cancellationToken);
+                cancellationToken,
+                search,
+                tag);
 
             Response.Headers["X-Total-Count"] = result.TotalCount.ToString();
 
@@ -252,14 +256,25 @@ public class WorkoutsController : ControllerBase
     public async Task<ActionResult<WorkoutSessionResource>> AddExerciseToWorkout(
         Guid id,
         AddWorkoutSessionExerciseResource resource,
+        string traineeId,
         CancellationToken cancellationToken)
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
             {
                 return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
             }
 
             var workout = await _workoutsRepository.GetWorkoutSessionAsync(
@@ -319,14 +334,25 @@ public class WorkoutsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetWorkoutResource>> GetWorkout(
         Guid id,
+        string traineeId,
         CancellationToken cancellationToken)
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
             {
                 return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
             }
 
             var domainWorkout = await _workoutsRepository.GetWorkoutHistoryDetailsAsync(
@@ -495,6 +521,12 @@ public class WorkoutsController : ControllerBase
             ExerciseCount = exercises.Count,
             TotalVolume = exercises.Sum(GetExerciseVolume),
             LeadingMuscles = GetLeadingMuscles(exercises),
+            Tags = exercises
+                .SelectMany(exercise =>
+                    ExerciseTagNormalizer.Normalize(exercise.Tags))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(tag => tag)
+                .ToList(),
             Exercises = includeExercises
                 ? exercises.Select(MapWorkoutHistoryExercise).ToList()
                 : []

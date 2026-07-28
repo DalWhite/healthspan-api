@@ -45,6 +45,69 @@ public class FileSystemBloodTestDocumentStorage
         };
     }
 
+    public async Task<byte[]?> ReadAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+    {
+        var absolutePath = ResolveStoredPath(document);
+        return absolutePath is not null && File.Exists(absolutePath)
+            ? await File.ReadAllBytesAsync(absolutePath, cancellationToken)
+            : null;
+    }
+
+    public Task DeleteAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+    {
+        var absolutePath = ResolveStoredPath(document);
+        if (absolutePath is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (File.Exists(absolutePath))
+        {
+            File.Delete(absolutePath);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private string? ResolveStoredPath(StoredBloodTestDocument document)
+    {
+        if (!string.Equals(
+                document.ContainerName,
+                "filesystem",
+                StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(document.BlobName))
+        {
+            return null;
+        }
+
+        var rootPath = Path.GetFullPath(ResolveBasePath());
+        var rootPrefix = rootPath.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var relativePath = document.BlobName.Replace(
+            '/',
+            Path.DirectorySeparatorChar);
+        var absolutePath = Path.GetFullPath(
+            Path.Combine(rootPath, relativePath));
+
+        if (!absolutePath.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Stored document path is outside the configured root.");
+        }
+
+        return absolutePath;
+    }
+
     private string ResolveBasePath()
     {
         if (!string.IsNullOrWhiteSpace(_settings.BasePath))

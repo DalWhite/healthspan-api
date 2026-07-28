@@ -34,6 +34,26 @@ public class GalpinAssessmentService
         return _repository.GetAssessments(userId);
     }
 
+    public bool UpdateAssessment(
+        string userId,
+        Guid assessmentId,
+        DateTime assessedOnUtc,
+        string? notes,
+        List<GalpinAssessmentScoreInput> scores)
+        => _repository.UpdateAssessment(
+            userId,
+            assessmentId,
+            assessedOnUtc,
+            notes,
+            scores);
+
+    public bool DeleteAssessment(
+        string userId,
+        Guid assessmentId)
+        => _repository.DeleteAssessment(
+            userId,
+            assessmentId);
+
     public GalpinAssessment? GetLatestAssessment(string userId)
     {
         return _repository.GetLatestAssessment(userId);
