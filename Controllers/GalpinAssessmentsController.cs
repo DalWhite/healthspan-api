@@ -96,6 +96,31 @@ public class GalpinAssessmentsController : ControllerBase
         }
     }
 
+    [HttpPut("{id}")]
+    public IActionResult UpdateAssessment(
+        Guid id,
+        AddGalpinAssessmentResource resource)
+    {
+        var userId = _currentUserProvider.GetCurrentUserId();
+        var updated = _assessmentService.UpdateAssessment(
+            userId,
+            id,
+            resource.AssessedOnUtc,
+            resource.Notes,
+            MapScores(resource));
+
+        return updated ? NoContent() : NotFound();
+    }
+
+    [HttpDelete("{id}")]
+    public IActionResult DeleteAssessment(Guid id)
+    {
+        var userId = _currentUserProvider.GetCurrentUserId();
+        return _assessmentService.DeleteAssessment(userId, id)
+            ? NoContent()
+            : NotFound();
+    }
+
     [HttpGet("trends/{adaptation}")]
     public ActionResult<GetGalpinAdaptationTrendResource> GetAdaptationTrend(GalpinAdaptationType adaptation, string? userId)
     {
@@ -150,4 +175,14 @@ public class GalpinAssessmentsController : ControllerBase
             }).ToList()
         };
     }
+
+    private static List<GalpinAssessmentScoreInput> MapScores(
+        AddGalpinAssessmentResource resource)
+        => resource.Scores.Select(score =>
+            new GalpinAssessmentScoreInput
+            {
+                Adaptation = score.Adaptation,
+                Score = score.Score,
+                EvidenceNotes = score.EvidenceNotes
+            }).ToList();
 }

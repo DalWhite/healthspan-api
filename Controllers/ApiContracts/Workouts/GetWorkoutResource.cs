@@ -9,6 +9,7 @@ public sealed class GetWorkoutResource
     public int ExerciseCount { get; set; }
     public double TotalVolume { get; set; }
     public List<string> LeadingMuscles { get; set; } = [];
+    public List<string> Tags { get; set; } = [];
     public List<WorkoutHistoryExerciseResource> Exercises { get; set; } = [];
 }
 

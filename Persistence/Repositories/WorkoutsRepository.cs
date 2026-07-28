@@ -18,7 +18,9 @@ public class WorkoutsRepository
         DateOnly? to,
         int? page,
         int? pageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string search = "",
+        string tag = "")
     {
         var query = WorkoutHistoryQuery(userId);
 
@@ -32,6 +34,45 @@ public class WorkoutsRepository
         {
             var toExclusive = to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
             query = query.Where(workout => workout.Date < toExclusive);
+        }
+
+        var normalizedSearch = search?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+        {
+            query = query.Where(workout =>
+                workout.Type.Contains(normalizedSearch)
+                || workout.Exercises.Any(exercise =>
+                    exercise.Type.Name.Contains(normalizedSearch)));
+        }
+
+        var normalizedTag = tag?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedTag))
+        {
+            var candidates = await query
+                .AsSplitQuery()
+                .ToListAsync(cancellationToken);
+            var filtered = candidates
+                .Where(workout => workout.Exercises.Any(exercise =>
+                    ExerciseTagNormalizer.Normalize(exercise.Tags)
+                        .Contains(
+                            normalizedTag,
+                            StringComparer.OrdinalIgnoreCase)))
+                .OrderByDescending(workout => workout.Date)
+                .ThenByDescending(workout => workout.Id)
+                .ToList();
+            var filteredCount = filtered.Count;
+
+            if (page.HasValue && pageSize.HasValue)
+            {
+                filtered = filtered
+                    .Skip((page.Value - 1) * pageSize.Value)
+                    .Take(pageSize.Value)
+                    .ToList();
+            }
+
+            return new WorkoutHistoryPage(
+                filtered,
+                filteredCount);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

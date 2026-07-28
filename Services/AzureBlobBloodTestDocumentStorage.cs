@@ -50,4 +50,51 @@ public class AzureBlobBloodTestDocumentStorage
             BlobUri = blobClient.Uri.ToString()
         };
     }
+
+    public async Task<byte[]?> ReadAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.ConnectionString)
+            || string.IsNullOrWhiteSpace(document.ContainerName)
+            || string.IsNullOrWhiteSpace(document.BlobName))
+        {
+            return null;
+        }
+
+        var blobClient = new BlobContainerClient(
+                _settings.ConnectionString,
+                document.ContainerName)
+            .GetBlobClient(document.BlobName);
+
+        if (!await blobClient.ExistsAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var content = await blobClient.DownloadContentAsync(
+            cancellationToken);
+        return content.Value.Content.ToArray();
+    }
+
+    public async Task DeleteAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.ConnectionString)
+            || string.IsNullOrWhiteSpace(document.ContainerName)
+            || string.IsNullOrWhiteSpace(document.BlobName))
+        {
+            return;
+        }
+
+        var container = new BlobContainerClient(
+            _settings.ConnectionString,
+            document.ContainerName);
+        await container
+            .GetBlobClient(document.BlobName)
+            .DeleteIfExistsAsync(
+                DeleteSnapshotsOption.IncludeSnapshots,
+                cancellationToken: cancellationToken);
+    }
 }

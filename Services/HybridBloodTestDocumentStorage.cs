@@ -21,4 +21,24 @@ public class HybridBloodTestDocumentStorage : IBloodTestDocumentStorage
 
         return await _fileSystemStorage.StoreAsync(userId, file, cancellationToken);
     }
+
+    public Task<byte[]?> ReadAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+        => string.Equals(
+            document.ContainerName,
+            "filesystem",
+            StringComparison.OrdinalIgnoreCase)
+            ? _fileSystemStorage.ReadAsync(document, cancellationToken)
+            : _blobStorage.ReadAsync(document, cancellationToken);
+
+    public Task DeleteAsync(
+        StoredBloodTestDocument document,
+        CancellationToken cancellationToken)
+        => string.Equals(
+            document.ContainerName,
+            "filesystem",
+            StringComparison.OrdinalIgnoreCase)
+            ? _fileSystemStorage.DeleteAsync(document, cancellationToken)
+            : _blobStorage.DeleteAsync(document, cancellationToken);
 }

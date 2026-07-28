@@ -139,6 +139,7 @@ builder.Services.AddScoped<GalpinAssessmentCatalogService>();
 builder.Services.AddScoped<GalpinAssessmentService>();
 builder.Services.AddScoped<HealthAccessService>();
 builder.Services.AddScoped<HealthDashboardService>();
+builder.Services.AddScoped<UserDataExportService>();
 builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
 builder.Services.AddScoped<FileSystemBloodTestDocumentStorage>();
 builder.Services.AddScoped<IBloodTestDocumentStorage, HybridBloodTestDocumentStorage>();

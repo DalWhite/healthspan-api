@@ -187,14 +187,18 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public ActionResult<GetExerciseResource> GetExercise(Guid id)
+    public ActionResult<GetExerciseResource> GetExercise(
+        Guid id,
+        string userId = "")
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var domainExercise = _exerciseRepository.GetExercise(id, userId);
@@ -214,14 +218,18 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public IActionResult DeleteExercise(Guid id)
+    public IActionResult DeleteExercise(
+        Guid id,
+        string userId = "")
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             if (!_exerciseRepository.DeleteExercise(id, userId))
@@ -271,14 +279,17 @@ public class ExercisesController : ControllerBase
 
     [HttpPut]
     public ActionResult<GetExerciseResource> UpdateExercise(
-        UpdateExerciseResource exerciseResource)
+        UpdateExerciseResource exerciseResource,
+        string userId = "")
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var result = _exerciseRepository.UpdateExercise(
