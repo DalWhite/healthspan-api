@@ -64,8 +64,11 @@ public sealed class HealthProfileTests : ApiTestBase
     {
         var request = new UpdateHealthProfileResource
         {
+            Name = "Updated User",
             DateOfBirth = new DateOnly(1989, 6, 15),
-            BiologicalSex = BiologicalSex.Female
+            BiologicalSex = BiologicalSex.Female,
+            HeightCm = 172,
+            WeightKg = 68
         };
 
         var response = await Client.PutAsJsonAsync(
@@ -85,6 +88,13 @@ public sealed class HealthProfileTests : ApiTestBase
                 item.UserId == TestDataSeeder.TestUserId);
         stored.DateOfBirth.Should().Be(request.DateOfBirth);
         stored.BiologicalSex.Should().Be(request.BiologicalSex);
+
+        var storedUser = db.Users
+            .IgnoreQueryFilters()
+            .Single(item => item.Id == TestDataSeeder.TestUserId);
+        storedUser.Name.Should().Be(request.Name);
+        storedUser.Height.Should().Be(request.HeightCm);
+        storedUser.Weight.Should().Be(request.WeightKg);
     }
 
     [Fact]
