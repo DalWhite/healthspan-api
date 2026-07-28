@@ -35,7 +35,8 @@ public class ExercisesController : ControllerBase
         int? page = null,
         int? pageSize = null,
         string sortBy = "date",
-        bool descending = true)
+        bool descending = true,
+        string tag = "")
     {
         try
         {
@@ -52,8 +53,11 @@ public class ExercisesController : ControllerBase
             }
 
             var exercises = exerciseTypeId.HasValue
-                ? _exerciseRepository.GetExercisesByType(exerciseTypeId.Value, userId)
-                : _exerciseRepository.GetExercises(userId);
+                ? _exerciseRepository.GetExercisesByType(
+                    exerciseTypeId.Value,
+                    userId,
+                    tag)
+                : _exerciseRepository.GetExercises(userId, tag);
 
             var selectedGroups = ParseMuscleGroups(muscleGroup);
             if (selectedGroups.Count > 0)
@@ -124,6 +128,8 @@ public class ExercisesController : ControllerBase
             var domainExercise = exerciseResource.Adapt<Exercise>();
             domainExercise.TypeId = exerciseResource.TypeId;
             domainExercise.WorkoutId = exerciseResource.WorkoutId;
+            domainExercise.Tags = ExerciseTagNormalizer.Normalize(
+                exerciseResource.Tags);
             var exerciseId = _exerciseRepository.AddExercise(domainExercise, userId);
             return CreatedAtAction(nameof(GetExercise), new { id = exerciseId }, new { Id = exerciseId });
         }
@@ -138,13 +144,21 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var domainExercise = _exerciseRepository.GetExercise(id);
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var domainExercise = _exerciseRepository.GetExercise(id, userId);
             if (domainExercise is not null)
             {
                 return Ok(MapExercise(domainExercise));
             }
 
-            return NotFound($"Exercise with ID {id} not found");
+            return Problem(
+                title: "Exercise not found.",
+                statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
         {
@@ -153,17 +167,23 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public ActionResult<GetExerciseResource> DeleteExercise(Guid id)
+    public IActionResult DeleteExercise(Guid id)
     {
         try
         {
-            var existingExercise = _exerciseRepository.GetExercise(id);
-            if (existingExercise is null)
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
             {
-                return NotFound($"Exercise with ID {id} not found");
+                return Unauthorized();
             }
 
-            _exerciseRepository.DeleteExercise(id);
+            if (!_exerciseRepository.DeleteExercise(id, userId))
+            {
+                return Problem(
+                    title: "Exercise not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
             return NoContent();
         }
         catch (Exception ex)
@@ -177,10 +197,18 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var domainExercise = _exerciseRepository.GetExercise(id);
+            userId = ResolveUserId(userId);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var domainExercise = _exerciseRepository.GetExercise(id, userId);
             if (domainExercise is null)
             {
-                return NotFound($"Exercise with ID {id} not found");
+                return Problem(
+                    title: "Exercise not found.",
+                    statusCode: StatusCodes.Status404NotFound);
             }
 
             var exerciseMetrics = domainExercise.Adapt<GetExerciseMetrics>();
@@ -193,20 +221,49 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpPut]
-    public IActionResult UpdateExercise(UpdateExerciseResource exerciseResource, string userId = "")
+    public ActionResult<GetExerciseResource> UpdateExercise(
+        UpdateExerciseResource exerciseResource)
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
-            var domainExercise = exerciseResource.Adapt<Exercise>();
-            var existingExercise = _exerciseRepository.GetExercise(domainExercise.Id);
-            if (existingExercise is not null)
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
             {
-                _exerciseRepository.UpdateExercise(domainExercise, userId);
-                return Ok("Exercise updated successfully");
+                return Unauthorized();
             }
 
-            return NotFound($"Exercise with ID {domainExercise.Id} not found");
+            var result = _exerciseRepository.UpdateExercise(
+                new ExerciseUpdateCommand(
+                    exerciseResource.Id,
+                    exerciseResource.Series,
+                    exerciseResource.Repetitions,
+                    exerciseResource.Weight.HasValue
+                        ? (double?)exerciseResource.Weight.Value
+                        : null,
+                    exerciseResource.Comments,
+                    exerciseResource.Tags,
+                    exerciseResource.Type?.Id,
+                    exerciseResource.Workout?.Id),
+                userId);
+
+            return result.Status switch
+            {
+                ExerciseUpdateStatus.Updated => Ok(MapExercise(result.Exercise)),
+                ExerciseUpdateStatus.NotFound => Problem(
+                    title: "Exercise not found.",
+                    statusCode: StatusCodes.Status404NotFound),
+                ExerciseUpdateStatus.WorkoutNotFound => Problem(
+                    title: "The selected workout is unavailable.",
+                    detail: "Reload the exercise and try again.",
+                    statusCode: StatusCodes.Status409Conflict),
+                ExerciseUpdateStatus.ExerciseTypeNotFound => Problem(
+                    title: "The selected exercise type is unavailable.",
+                    detail: "Choose another exercise type and try again.",
+                    statusCode: StatusCodes.Status409Conflict),
+                _ => Problem(
+                    title: "The exercise could not be updated.",
+                    statusCode: StatusCodes.Status409Conflict)
+            };
         }
         catch (Exception ex)
         {
@@ -215,12 +272,18 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{exerciseTypeId}/kpis")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(int exerciseTypeId, string userId = "")
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(
+        int exerciseTypeId,
+        string userId = "",
+        string tag = "")
     {
         try
         {
             userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
-            var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(exerciseTypeId, userId);
+            var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(
+                exerciseTypeId,
+                userId,
+                tag);
             if (exerciseTypeKpis is not null)
             {
                 return Ok(exerciseTypeKpis);
@@ -235,12 +298,21 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{exerciseTypeId}/trends")]
-    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(int exerciseTypeId, TrendKpiType type, string userId = "")
+    public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(
+        int exerciseTypeId,
+        TrendKpiType type,
+        string userId = "",
+        string tag = "")
     {
         try
         {
             userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
-            var exerciseTypeTrends = _exercisesService.GetExerciseTypeTrendsOfUser(exerciseTypeId, type, userId);
+            var exerciseTypeTrends = _exercisesService
+                .GetExerciseTypeTrendsOfUser(
+                    exerciseTypeId,
+                    type,
+                    userId,
+                    tag);
             if (exerciseTypeTrends is not null)
             {
                 return Ok(exerciseTypeTrends);
@@ -274,6 +346,7 @@ public class ExercisesController : ControllerBase
             Repetitions = exercise.Repetitions,
             Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
             Comments = exercise.Comments,
+            Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
             MaxRepetition = exercise.MaxRepetition,
             Volume = exercise.Volume,
             Intensity = exercise.Intensity,

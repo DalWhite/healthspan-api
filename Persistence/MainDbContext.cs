@@ -182,6 +182,18 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
                 value => CloneExerciseTags(value)
             ));
 
+        var trainingTagsProperty = builder.Entity<Exercise>()
+            .Property(exercise => exercise.Tags)
+            .HasConversion(
+                value => SerializeTrainingTags(value),
+                value => DeserializeTrainingTags(value));
+        trainingTagsProperty.IsRequired();
+        trainingTagsProperty.Metadata.SetValueComparer(
+            new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+                (left, right) => TrainingTagsEqual(left, right),
+                value => GetTrainingTagsHashCode(value),
+                value => CloneTrainingTags(value)));
+
         base.OnModelCreating(builder);
     }
 
@@ -249,4 +261,47 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
                 Category = tag.Category ?? string.Empty
             })
             .ToList();
+
+    private static string SerializeTrainingTags(List<string> tags)
+        => JsonSerializer.Serialize(CloneTrainingTags(tags), (JsonSerializerOptions)null);
+
+    private static List<string> DeserializeTrainingTags(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        try
+        {
+            return CloneTrainingTags(
+                JsonSerializer.Deserialize<List<string>>(
+                    value,
+                    (JsonSerializerOptions)null));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static bool TrainingTagsEqual(
+        List<string> left,
+        List<string> right)
+        => CloneTrainingTags(left)
+            .SequenceEqual(
+                CloneTrainingTags(right),
+                StringComparer.OrdinalIgnoreCase);
+
+    private static int GetTrainingTagsHashCode(List<string> tags)
+        => CloneTrainingTags(tags)
+            .Aggregate(
+                17,
+                (hash, tag) =>
+                    HashCode.Combine(
+                        hash,
+                        StringComparer.OrdinalIgnoreCase.GetHashCode(tag)));
+
+    private static List<string> CloneTrainingTags(IEnumerable<string> tags)
+        => ExerciseTagNormalizer.Normalize(tags);
 }

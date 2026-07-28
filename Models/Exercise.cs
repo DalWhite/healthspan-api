@@ -9,6 +9,7 @@ public class Exercise
     public int? Intensity { get; set; }
     public int? TypeId { get; set; }
     public string Comments { get; set; }
+    public List<string> Tags { get; set; } = [];
     public ExerciseType Type { get; set; }
     public Guid? WorkoutId { get; set; }
     public Workout Workout { get; set; }

@@ -188,6 +188,10 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("Series")
                         .HasColumnType("int");
 
+                    b.Property<string>("Tags")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
                     b.Property<int?>("TypeId")
                         .HasColumnType("int");
 

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-public class AddWorkoutSessionExerciseResource
+public class AddWorkoutSessionExerciseResource : IValidatableObject
 {
     [Range(1, int.MaxValue)]
     public int TypeId { get; set; }
@@ -15,4 +15,8 @@ public class AddWorkoutSessionExerciseResource
     public decimal Weight { get; set; }
 
     public string Comments { get; set; }
+    public List<string> Tags { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        => ExerciseTagNormalizer.Validate(Tags);
 }

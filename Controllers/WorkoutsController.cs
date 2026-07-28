@@ -215,6 +215,7 @@ public class WorkoutsController : ControllerBase
                 Repetitions = resource.Repetitions,
                 Weight = (double)resource.Weight,
                 Comments = resource.Comments,
+                Tags = ExerciseTagNormalizer.Normalize(resource.Tags),
                 Type = exerciseType
             };
 
@@ -378,7 +379,8 @@ public class WorkoutsController : ControllerBase
                     Series = exercise.Series,
                     Repetitions = exercise.Repetitions,
                     Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
-                    Comments = exercise.Comments
+                    Comments = exercise.Comments,
+                    Tags = ExerciseTagNormalizer.Normalize(exercise.Tags)
                 })
                 .ToList()
         };
@@ -416,6 +418,7 @@ public class WorkoutsController : ControllerBase
             Weight = exercise.Weight,
             Volume = GetExerciseVolume(exercise),
             Comments = exercise.Comments,
+            Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
             Muscles = GetExerciseMuscles(exercise)
         };
 

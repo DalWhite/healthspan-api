@@ -172,10 +172,21 @@ public class ExerciseTypesController : ControllerBase
             return _exerciseTypeRepository.DeleteExerciseType(id) switch
             {
                 DeleteExerciseTypeResult.Deleted => NoContent(),
-                DeleteExerciseTypeResult.NotFound => NotFound($"ExerciseType with ID {id} not found"),
-                DeleteExerciseTypeResult.HasVariations => BadRequest("Delete or reassign variations before deleting this exercise type."),
-                DeleteExerciseTypeResult.InUseByExercises => BadRequest("This exercise type is referenced by existing exercises and cannot be deleted."),
-                DeleteExerciseTypeResult.InUseByWorkoutTemplates => BadRequest("This exercise type is referenced by a workout template and cannot be deleted."),
+                DeleteExerciseTypeResult.NotFound => Problem(
+                    title: "Exercise type not found.",
+                    statusCode: StatusCodes.Status404NotFound),
+                DeleteExerciseTypeResult.HasVariations => Problem(
+                    title: "This exercise type still has variations.",
+                    detail: "Reassign or delete its variations first.",
+                    statusCode: StatusCodes.Status409Conflict),
+                DeleteExerciseTypeResult.InUseByExercises => Problem(
+                    title: "This exercise type has workout history.",
+                    detail: "Existing exercise history must keep its catalog reference.",
+                    statusCode: StatusCodes.Status409Conflict),
+                DeleteExerciseTypeResult.InUseByWorkoutTemplates => Problem(
+                    title: "This exercise type is used by a workout template.",
+                    detail: "Remove it from the template before deleting it.",
+                    statusCode: StatusCodes.Status409Conflict),
                 _ => Unexpected($"Failed to delete exercise type {id}.", new InvalidOperationException($"Unknown delete result for exercise type {id}."))
             };
         }
