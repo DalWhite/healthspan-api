@@ -33,7 +33,7 @@ jobs:
         run: dotnet test Tests/healthspan-api.tests/healthspan-api.tests.csproj --configuration Release --no-restore
 
       - name: dotnet publish
-        run: dotnet publish healthspan-api.csproj -c Release --no-restore -o ${{env.DOTNET_ROOT}}/myapp
+        run: dotnet publish healthspan-api.csproj -c Release --no-restore -o ./publish
       
       - name: App Settings Variable Substitution
         uses: microsoft/variable-substitution@v1
@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: .net-app
-          path: ${{env.DOTNET_ROOT}}/myapp
+          path: ./publish
 
       - name: Run EF 
         run: | 
