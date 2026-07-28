@@ -13,6 +13,7 @@ public class WorkoutsController : ControllerBase
     private readonly ExercisesRepository _exercisesRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly CurrentUserProvider _userProvider;
+    private readonly WeeklyTrainingSummaryService _weeklyTrainingSummaryService;
     private readonly ILogger<WorkoutsController> _logger;
 
     public WorkoutsController(
@@ -20,12 +21,14 @@ public class WorkoutsController : ControllerBase
         ExercisesRepository exercisesRepository,
         ExerciseTypesRepository exerciseTypesRepository,
         CurrentUserProvider userProvider,
+        WeeklyTrainingSummaryService weeklyTrainingSummaryService,
         ILogger<WorkoutsController> logger)
     {
         _workoutsRepository = workoutRepository;
         _exercisesRepository = exercisesRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _userProvider = userProvider;
+        _weeklyTrainingSummaryService = weeklyTrainingSummaryService;
         _logger = logger;
     }
     [HttpGet]
@@ -127,6 +130,40 @@ public class WorkoutsController : ControllerBase
         catch (Exception ex)
         {
             return Unexpected("Failed to prepare the workout.", ex);
+        }
+    }
+
+    [HttpGet("weekly-summary")]
+    public async Task<ActionResult<WeeklyTrainingSummaryResource>>
+        GetWeeklyTrainingSummary(
+            int weeks = 12,
+            CancellationToken cancellationToken = default)
+    {
+        if (weeks is < 1 or > 52)
+        {
+            return Problem(
+                title: "Weeks must be between 1 and 52.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            return Ok(await _weeklyTrainingSummaryService.GetAsync(
+                userId,
+                weeks,
+                cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected(
+                "Failed to load the weekly training summary.",
+                ex);
         }
     }
 
