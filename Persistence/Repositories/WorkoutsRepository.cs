@@ -123,9 +123,10 @@ public class WorkoutsRepository
             workout.Type = type.Trim();
         }
 
-        workout.DailySessionKey = WorkoutDailySessionKey.Create(
+        workout.DailySessionKey = WorkoutDailySessionKey.CreateForSession(
             workout.UserId,
-            DateOnly.FromDateTime(date));
+            DateOnly.FromDateTime(date),
+            workout.Id);
 
         await _context.SaveChangesAsync(cancellationToken);
         return workout;
@@ -175,6 +176,53 @@ public class WorkoutsRepository
             .FirstOrDefaultAsync(
                 workout => workout.Date >= start && workout.Date < end,
                 cancellationToken);
+    }
+
+    public Task<List<Workout>> GetWorkoutSessionsForDateAsync(
+        string userId,
+        DateOnly date,
+        CancellationToken cancellationToken = default)
+    {
+        var start = date.ToDateTime(TimeOnly.MinValue);
+        var end = start.AddDays(1);
+        return SessionQuery(userId)
+            .Where(workout =>
+                workout.Date >= start
+                && workout.Date < end)
+            .OrderBy(workout => workout.Date)
+            .ThenBy(workout => workout.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Workout> CreateWorkoutSessionAsync(
+        string userId,
+        DateOnly date,
+        string type,
+        CancellationToken cancellationToken = default)
+    {
+        var workoutId = Guid.NewGuid();
+        var workout = new Workout
+        {
+            Id = workoutId,
+            Date = date.ToDateTime(
+                date == DateOnly.FromDateTime(DateTime.Today)
+                    ? TimeOnly.FromDateTime(DateTime.Now)
+                    : TimeOnly.MinValue),
+            Type = string.IsNullOrWhiteSpace(type)
+                ? "Training"
+                : type.Trim(),
+            UserId = userId,
+            DailySessionKey =
+                WorkoutDailySessionKey.CreateForSession(
+                    userId,
+                    date,
+                    workoutId),
+            Exercises = []
+        };
+
+        _context.Workouts.Add(workout);
+        await _context.SaveChangesAsync(cancellationToken);
+        return workout;
     }
 
     public async Task<(Workout Workout, bool Created)> GetOrCreateWorkoutSessionAsync(

@@ -1,6 +1,14 @@
 public sealed class WeeklyTrainingSummaryResource
 {
     public List<WeeklyTrainingWeekResource> Weeks { get; set; } = [];
+    public List<TrainingDayActivityResource> ActivityDays { get; set; } = [];
+}
+
+public sealed class TrainingDayActivityResource
+{
+    public DateTime Date { get; set; }
+    public int WorkoutCount { get; set; }
+    public int ExerciseCount { get; set; }
 }
 
 public sealed class WeeklyTrainingWeekResource

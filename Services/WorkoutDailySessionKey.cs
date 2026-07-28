@@ -12,4 +12,16 @@ internal static class WorkoutDailySessionKey
         var source = Encoding.UTF8.GetBytes($"{userId}\n{date:yyyy-MM-dd}");
         return Convert.ToHexString(SHA256.HashData(source));
     }
+
+    public static string CreateForSession(
+        string userId,
+        DateOnly date,
+        Guid sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        var source = Encoding.UTF8.GetBytes(
+            $"{userId}\n{date:yyyy-MM-dd}\n{sessionId:N}");
+        return Convert.ToHexString(SHA256.HashData(source));
+    }
 }

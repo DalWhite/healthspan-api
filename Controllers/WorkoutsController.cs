@@ -222,6 +222,47 @@ public class WorkoutsController : ControllerBase
         }
     }
 
+    [HttpGet("today/sessions")]
+    public async Task<ActionResult<List<WorkoutSessionResource>>>
+        GetDayWorkoutSessions(
+            DateOnly? date,
+            CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var sessionDate =
+                date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var workouts = await _workoutsRepository
+                .GetWorkoutSessionsForDateAsync(
+                    userId,
+                    sessionDate,
+                    cancellationToken);
+            var response = new List<WorkoutSessionResource>();
+
+            foreach (var workout in workouts)
+            {
+                response.Add(await MapSessionAsync(
+                    workout,
+                    userId,
+                    cancellationToken));
+            }
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected(
+                "Failed to load the day's workouts.",
+                ex);
+        }
+    }
+
     [HttpPost("today")]
     public async Task<ActionResult<WorkoutSessionResource>> StartTodayWorkout(
         StartWorkoutSessionResource resource,
@@ -235,12 +276,23 @@ public class WorkoutsController : ControllerBase
                 return Unauthorized();
             }
 
-            var result = await _workoutsRepository.GetOrCreateWorkoutSessionAsync(
+            var result = resource.CreateNew
+                ? (Workout: await _workoutsRepository
+                    .CreateWorkoutSessionAsync(
+                        userId,
+                        resource.Date,
+                        resource.Type,
+                        cancellationToken), Created: true)
+                : await _workoutsRepository
+                    .GetOrCreateWorkoutSessionAsync(
+                        userId,
+                        resource.Date,
+                        resource.Type,
+                        cancellationToken);
+            var response = await MapSessionAsync(
+                result.Workout,
                 userId,
-                resource.Date,
-                resource.Type,
                 cancellationToken);
-            var response = await MapSessionAsync(result.Workout, userId, cancellationToken);
 
             return result.Created
                 ? CreatedAtAction(nameof(GetWorkout), new { id = result.Workout.Id }, response)
