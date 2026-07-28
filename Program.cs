@@ -131,6 +131,7 @@ builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<WeeklyTrainingSummaryService>();
 builder.Services.AddScoped<HealthProfileService>();
+builder.Services.AddScoped<TrainingAccessService>();
 builder.Services.AddScoped<BloodAnalyticsService>();
 builder.Services.AddSingleton<BloodTestProcessingChannel>();
 builder.Services.AddHostedService<BloodTestProcessingWorker>();

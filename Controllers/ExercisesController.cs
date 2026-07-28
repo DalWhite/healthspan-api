@@ -15,15 +15,17 @@ public class ExercisesController : ControllerBase
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly ExerciseMetricsService _exercisesService;
     private readonly CurrentUserProvider _userProvider;
+    private readonly TrainingAccessService _trainingAccessService;
     private readonly ILogger<ExercisesController> _logger;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider, ILogger<ExercisesController> logger)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider, TrainingAccessService trainingAccessService, ILogger<ExercisesController> logger)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _exercisesService = exercisesService;
         _userProvider = userProvider;
+        _trainingAccessService = trainingAccessService;
         _logger = logger;
     }
 
@@ -40,16 +42,33 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = ResolveUserId(userId);
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
 
             if (page.HasValue != pageSize.HasValue)
             {
-                return BadRequest("Both page and pageSize must be specified together.");
+                return Problem(
+                    title: "Page and page size must be specified together.",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             if ((page.HasValue && page <= 0) || (pageSize.HasValue && pageSize <= 0))
             {
-                return BadRequest("page and pageSize must be greater than zero.");
+                return Problem(
+                    title: "Page and page size must be greater than zero.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (pageSize > 100)
+            {
+                return Problem(
+                    title: "Page size must be between 1 and 100.",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             var exercises = exerciseTypeId.HasValue
@@ -120,14 +139,42 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpPost]
-    public IActionResult AddExercise(AddExerciseResource exerciseResource, string userId = "")
+    public async Task<IActionResult> AddExercise(
+        AddExerciseResource exerciseResource,
+        string userId = "",
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
+            var workout = await _workoutsRepository
+                .GetWorkoutSessionAsync(
+                    exerciseResource.WorkoutId,
+                    userId,
+                    cancellationToken);
+            if (workout is null)
+            {
+                return Problem(
+                    title: "The selected workout is unavailable.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
             var domainExercise = exerciseResource.Adapt<Exercise>();
             domainExercise.TypeId = exerciseResource.TypeId;
             domainExercise.WorkoutId = exerciseResource.WorkoutId;
+            domainExercise.BodyWeight = exerciseResource.BodyWeight.HasValue
+                ? (double?)exerciseResource.BodyWeight.Value
+                : null;
+            domainExercise.AddedWeight = exerciseResource.AddedWeight.HasValue
+                ? (double?)exerciseResource.AddedWeight.Value
+                : null;
             domainExercise.Tags = ExerciseTagNormalizer.Normalize(
                 exerciseResource.Tags);
             var exerciseId = _exerciseRepository.AddExercise(domainExercise, userId);
@@ -197,10 +244,12 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = ResolveUserId(userId);
-            if (string.IsNullOrWhiteSpace(userId))
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var domainExercise = _exerciseRepository.GetExercise(id, userId);
@@ -239,6 +288,12 @@ public class ExercisesController : ControllerBase
                     exerciseResource.Repetitions,
                     exerciseResource.Weight.HasValue
                         ? (double?)exerciseResource.Weight.Value
+                        : null,
+                    exerciseResource.BodyWeight.HasValue
+                        ? (double?)exerciseResource.BodyWeight.Value
+                        : null,
+                    exerciseResource.AddedWeight.HasValue
+                        ? (double?)exerciseResource.AddedWeight.Value
                         : null,
                     exerciseResource.Comments,
                     exerciseResource.Tags,
@@ -279,7 +334,14 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
             var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(
                 exerciseTypeId,
                 userId,
@@ -289,7 +351,9 @@ public class ExercisesController : ControllerBase
                 return Ok(exerciseTypeKpis);
             }
 
-            return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
+            return Problem(
+                title: "Exercise type not found.",
+                statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
         {
@@ -306,7 +370,14 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            userId = string.IsNullOrEmpty(userId) ? _userProvider.GetCurrentUserId() : userId;
+            var accessError = ResolveAccessibleUserId(
+                userId,
+                out userId);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
             var exerciseTypeTrends = _exercisesService
                 .GetExerciseTypeTrendsOfUser(
                     exerciseTypeId,
@@ -318,7 +389,9 @@ public class ExercisesController : ControllerBase
                 return Ok(exerciseTypeTrends);
             }
 
-            return NotFound($"ExerciseType with ID {exerciseTypeId} not found");
+            return Problem(
+                title: "Exercise type not found.",
+                statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
         {
@@ -326,10 +399,26 @@ public class ExercisesController : ControllerBase
         }
     }
 
-    private string ResolveUserId(string userId)
-        => string.IsNullOrWhiteSpace(userId)
-            ? _userProvider.GetCurrentUserId() ?? string.Empty
-            : userId;
+    private ActionResult ResolveAccessibleUserId(
+        string requestedUserId,
+        out string targetUserId)
+    {
+        var requesterUserId = _userProvider.GetCurrentUserId();
+        targetUserId = string.IsNullOrWhiteSpace(requestedUserId)
+            ? requesterUserId
+            : requestedUserId;
+
+        if (string.IsNullOrWhiteSpace(requesterUserId))
+        {
+            return Unauthorized();
+        }
+
+        return _trainingAccessService.CanAccessUser(
+            requesterUserId,
+            targetUserId)
+                ? null
+                : Forbid();
+    }
 
     private static HashSet<MuscleGroup> ParseMuscleGroups(IEnumerable<string> muscleGroups)
         => (muscleGroups ?? [])
@@ -345,6 +434,12 @@ public class ExercisesController : ControllerBase
             Series = exercise.Series,
             Repetitions = exercise.Repetitions,
             Weight = exercise.Weight.HasValue ? (decimal?)exercise.Weight.Value : null,
+            BodyWeight = exercise.BodyWeight.HasValue
+                ? (decimal?)exercise.BodyWeight.Value
+                : null,
+            AddedWeight = exercise.AddedWeight.HasValue
+                ? (decimal?)exercise.AddedWeight.Value
+                : null,
             Comments = exercise.Comments,
             Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
             MaxRepetition = exercise.MaxRepetition,

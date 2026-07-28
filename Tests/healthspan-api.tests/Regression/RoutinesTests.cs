@@ -53,6 +53,26 @@ public class RoutinesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Routines_Reject_Unrelated_Target_User()
+    {
+        var unrelatedUserId = $"routine-user-{Guid.NewGuid():N}";
+
+        var getResponse = await Client.GetAsync(
+            $"/routines?traineeId={unrelatedUserId}");
+        var postResponse = await Client.PostAsJsonAsync(
+            "/routines",
+            new AddRoutineResource
+            {
+                Name = "Unauthorized",
+                UserId = unrelatedUserId,
+                WorkoutTemplates = []
+            });
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task AddRoutine_WithSingleWorkoutTemplate_Returns_Created()
     {
         var routine = new AddRoutineResource

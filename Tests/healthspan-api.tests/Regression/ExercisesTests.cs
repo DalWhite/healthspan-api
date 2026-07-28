@@ -24,6 +24,59 @@ public class ExercisesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Exercise_TargetUser_And_Workout_Are_Authorised()
+    {
+        var otherUserId = $"exercise-target-{Guid.NewGuid():N}";
+        var otherWorkoutId = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"{otherUserId}@healthspan.dev",
+                Email = $"{otherUserId}@healthspan.dev"
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = otherWorkoutId,
+                UserId = otherUserId,
+                Date = new DateTime(2097, 1, 10),
+                Type = "Private"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var listResponse = await Client.GetAsync(
+            $"/exercises?userId={otherUserId}");
+        var delegatedPost = await Client.PostAsJsonAsync(
+            $"/exercises?userId={otherUserId}",
+            new AddExerciseResource
+            {
+                TypeId = TestDataSeeder.BenchPressTypeId,
+                WorkoutId = otherWorkoutId,
+                Series = 3,
+                Repetitions = 8,
+                Weight = 80
+            });
+        var spoofedWorkoutPost = await Client.PostAsJsonAsync(
+            "/exercises",
+            new AddExerciseResource
+            {
+                TypeId = TestDataSeeder.BenchPressTypeId,
+                WorkoutId = otherWorkoutId,
+                Series = 3,
+                Repetitions = 8,
+                Weight = 80
+            });
+
+        listResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        delegatedPost.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        spoofedWorkoutPost.StatusCode.Should().Be(
+            HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task GetExercises_WithoutUserId_UsesCurrentUserContext()
     {
         var response = await Client.GetAsync("/exercises?page=1&pageSize=20&sortBy=date&descending=true");
@@ -294,6 +347,68 @@ public class ExercisesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task VolumeTrend_Aggregates_ExerciseRows_PerWorkout()
+    {
+        var exerciseTypeId = 0;
+        var workoutId = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var exerciseType = new ExerciseType
+            {
+                Name = $"Session volume {Guid.NewGuid():N}",
+                WeightType = "Standard",
+                Tags = []
+            };
+            db.ExerciseTypes.Add(exerciseType);
+            await db.SaveChangesAsync();
+            exerciseTypeId = exerciseType.Id;
+
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                UserId = TestDataSeeder.TestUserId,
+                Date = new DateTime(2096, 7, 28),
+                Type = "Volume aggregation",
+                Exercises =
+                [
+                    new Exercise
+                    {
+                        Id = Guid.NewGuid(),
+                        TypeId = exerciseTypeId,
+                        Series = 3,
+                        Repetitions = 10,
+                        Weight = 50,
+                        Volume = 1500
+                    },
+                    new Exercise
+                    {
+                        Id = Guid.NewGuid(),
+                        TypeId = exerciseTypeId,
+                        Series = 2,
+                        Repetitions = 10,
+                        Weight = 40,
+                        Volume = 800
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.GetAsync(
+            $"/exercises/{exerciseTypeId}/trends?type=Volume");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var trend = await response.Content
+            .ReadFromJsonAsync<GetExerciseTypeTrends>();
+        trend.Should().NotBeNull();
+        trend!.Points.Should().ContainSingle();
+        trend.Points[0].Data.Should().Be(2300);
+        trend.Points[0].Time.Date.Should().Be(
+            new DateTime(2096, 7, 28));
+    }
+
+    [Fact]
     public async Task GetExercises_SortByName_Returns_Ok()
     {
         var response = await Client.GetAsync($"/exercises?userId={TestDataSeeder.TestUserId}&sortBy=name&descending=false");
@@ -321,6 +436,19 @@ public class ExercisesTests : ApiTestBase
         var response = await Client.GetAsync($"/exercises?userId={TestDataSeeder.TestUserId}&page=1&pageSize=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
+    }
+
+    [Fact]
+    public async Task GetExercises_Rejects_PageSize_Above_ServerLimit()
+    {
+        var response = await Client.GetAsync(
+            $"/exercises?userId={TestDataSeeder.TestUserId}&page=1&pageSize=101");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
     }
 
     [Fact]
@@ -560,5 +688,83 @@ public class ExercisesTests : ApiTestBase
         var trend = await trendResponse.Content
             .ReadFromJsonAsync<GetExerciseTypeTrends>();
         trend!.Points.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task BodyWeight_Breakdown_RoundTrips_And_Uses_Effective_Load()
+    {
+        var typeId = 0;
+        var workoutId = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var type = new ExerciseType
+            {
+                Name = $"Weighted pull-up {Guid.NewGuid():N}",
+                Description = "Bodyweight plus load",
+                WeightType = "BodyWeight",
+                Tags = []
+            };
+            db.ExerciseTypes.Add(type);
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                UserId = TestDataSeeder.TestUserId,
+                Date = new DateTime(2097, 2, 10),
+                Type = "Pull"
+            });
+            await db.SaveChangesAsync();
+            typeId = type.Id;
+        }
+
+        var createResponse = await Client.PostAsJsonAsync(
+            "/exercises",
+            new AddExerciseResource
+            {
+                TypeId = typeId,
+                WorkoutId = workoutId,
+                Series = 3,
+                Repetitions = 5,
+                Weight = 85,
+                BodyWeight = 80,
+                AddedWeight = 5
+            });
+        var payload = await createResponse.Content
+            .ReadFromJsonAsync<JsonElement>();
+        var exerciseId = payload.GetProperty("id").GetGuid();
+
+        var getResponse = await Client.GetAsync(
+            $"/exercises/{exerciseId}");
+        var created = await getResponse.Content
+            .ReadFromJsonAsync<GetExerciseResource>();
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        created!.BodyWeight.Should().Be(80);
+        created.AddedWeight.Should().Be(5);
+        created.Weight.Should().Be(85);
+        created.Volume.Should().Be(1275);
+
+        var updateResponse = await Client.PutAsJsonAsync(
+            "/exercises",
+            new UpdateExerciseResource
+            {
+                Id = exerciseId,
+                Series = 3,
+                Repetitions = 5,
+                Weight = 90,
+                BodyWeight = 80,
+                AddedWeight = 10,
+                Type = new GetExerciseTypeResource { Id = typeId },
+                Workout = new GetWorkoutResource { Id = workoutId }
+            });
+        var updated = await updateResponse.Content
+            .ReadFromJsonAsync<GetExerciseResource>();
+
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        updated!.BodyWeight.Should().Be(80);
+        updated.AddedWeight.Should().Be(10);
+        updated.Weight.Should().Be(90);
+        updated.Volume.Should().Be(1350);
     }
 }

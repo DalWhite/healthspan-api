@@ -14,6 +14,15 @@ public class ExerciseTypesTests : ApiTestBase
     public ExerciseTypesTests(HealthspanApiFactory factory) : base(factory) { }
 
     [Fact]
+    public async Task GetExerciseTypes_Rejects_Unrelated_Favourite_Context()
+    {
+        var response = await Client.GetAsync(
+            $"/exercisetypes?userId=unrelated-{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task GetExerciseTypes_Returns_SeededTypes()
     {
         var response = await Client.GetAsync($"/exercisetypes?userId={TestDataSeeder.TestUserId}");
@@ -194,6 +203,8 @@ public class ExerciseTypesTests : ApiTestBase
             new SetExerciseTypeFavouriteResource { IsFavourite = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
     }
 
     [Fact]
@@ -248,6 +259,8 @@ public class ExerciseTypesTests : ApiTestBase
         var response = await Client.PostAsJsonAsync("/exercisetypes", newType);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
     }
 
     [Fact]

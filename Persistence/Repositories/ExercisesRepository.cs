@@ -132,6 +132,11 @@ public class ExercisesRepository(MainDbContext context)
     {
       existingEntity.Weight = command.Weight;
     }
+    if (command.BodyWeight.HasValue || command.AddedWeight.HasValue)
+    {
+      existingEntity.BodyWeight = command.BodyWeight;
+      existingEntity.AddedWeight = command.AddedWeight;
+    }
     if (command.Comments is not null)
     {
       existingEntity.Comments = command.Comments;
@@ -163,13 +168,39 @@ public class ExercisesRepository(MainDbContext context)
     if (string.Equals(weightType, "None", StringComparison.OrdinalIgnoreCase))
     {
       exercise.Weight = 0;
+      exercise.BodyWeight = null;
+      exercise.AddedWeight = null;
       exercise.MaxRepetition = null;
       exercise.Volume = null;
       exercise.Intensity = null;
       return;
     }
 
-    var weight = Math.Max(0, exercise.Weight ?? 0);
+    double weight;
+    if (string.Equals(
+          weightType,
+          "BodyWeight",
+          StringComparison.OrdinalIgnoreCase))
+    {
+      var hasBreakdown = exercise.BodyWeight.HasValue
+        || exercise.AddedWeight.HasValue;
+      exercise.BodyWeight = exercise.BodyWeight.HasValue
+        ? Math.Max(0, exercise.BodyWeight.Value)
+        : null;
+      exercise.AddedWeight = exercise.AddedWeight.HasValue
+        ? Math.Max(0, exercise.AddedWeight.Value)
+        : null;
+      weight = hasBreakdown
+        ? (exercise.BodyWeight ?? 0) + (exercise.AddedWeight ?? 0)
+        : Math.Max(0, exercise.Weight ?? 0);
+    }
+    else
+    {
+      exercise.BodyWeight = null;
+      exercise.AddedWeight = null;
+      weight = Math.Max(0, exercise.Weight ?? 0);
+    }
+
     var repetitions = Math.Max(0, exercise.Repetitions ?? 0);
     var series = Math.Max(0, exercise.Series ?? 0);
     exercise.Weight = weight;
@@ -221,6 +252,8 @@ public sealed record ExerciseUpdateCommand(
   int? Series,
   int? Repetitions,
   double? Weight,
+  double? BodyWeight,
+  double? AddedWeight,
   string Comments,
   IReadOnlyCollection<string> Tags,
   int? TypeId,

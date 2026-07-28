@@ -306,9 +306,7 @@ public sealed class WeeklyTrainingSummaryService(
                      "BodyWeight",
                      StringComparison.OrdinalIgnoreCase))
         {
-            load = exercise.Weight.GetValueOrDefault() > 0
-                ? $"{exercise.Weight:0.#} kg BW"
-                : "BW";
+            load = FormatBodyWeight(exercise);
         }
         else
         {
@@ -331,6 +329,21 @@ public sealed class WeeklyTrainingSummaryService(
         return !string.IsNullOrWhiteSpace(load)
             ? load
             : "Load not logged";
+    }
+
+    private static string FormatBodyWeight(Exercise exercise)
+    {
+        if (exercise.BodyWeight.GetValueOrDefault() > 0)
+        {
+            var baseWeight = $"{exercise.BodyWeight:0.#} kg BW";
+            return exercise.AddedWeight.GetValueOrDefault() > 0
+                ? $"{baseWeight} + {exercise.AddedWeight:0.#} kg"
+                : baseWeight;
+        }
+
+        return exercise.Weight.GetValueOrDefault() > 0
+            ? $"{exercise.Weight:0.#} kg BW"
+            : "BW";
     }
 
     private static void AddLoad(
