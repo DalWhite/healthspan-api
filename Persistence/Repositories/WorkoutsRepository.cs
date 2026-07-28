@@ -280,6 +280,24 @@ public class WorkoutsRepository
             .ToList();
     }
 
+    public Task<List<Workout>> GetWeeklyTrainingWorkoutsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+        => _context.Workouts
+            .IgnoreQueryFilters()
+            .Where(workout =>
+                workout.UserId == userId
+                && workout.Date.HasValue)
+            .Include(workout => workout.Exercises)
+                .ThenInclude(exercise => exercise.Type)
+                    .ThenInclude(type => type.MuscleAssignments)
+                        .ThenInclude(assignment => assignment.Muscle)
+            .OrderByDescending(workout => workout.Date)
+            .ThenByDescending(workout => workout.Id)
+            .AsSplitQuery()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
     private IQueryable<Workout> SessionQuery(string userId, bool asNoTracking = true)
     {
         var query = _context.Workouts

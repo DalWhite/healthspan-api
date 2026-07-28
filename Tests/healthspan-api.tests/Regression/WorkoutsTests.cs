@@ -113,6 +113,95 @@ public class WorkoutsTests : ApiTestBase
     }
 
     [Fact]
+    public async Task WeeklySummary_Returns_Bounded_UserScoped_TrainingData()
+    {
+        var workoutId = Guid.NewGuid();
+        var workoutDate = new DateTime(2099, 1, 5);
+        var otherUserId = $"weekly-summary-user-{Guid.NewGuid():N}";
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"{otherUserId}@healthspan.dev",
+                NormalizedUserName =
+                    $"{otherUserId}@healthspan.dev".ToUpperInvariant(),
+                Email = $"{otherUserId}@healthspan.dev",
+                NormalizedEmail =
+                    $"{otherUserId}@healthspan.dev".ToUpperInvariant()
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = workoutDate,
+                Type = "Weekly summary test",
+                UserId = TestDataSeeder.TestUserId,
+                Exercises =
+                [
+                    new Exercise
+                    {
+                        Id = Guid.NewGuid(),
+                        TypeId = TestDataSeeder.BenchPressTypeId,
+                        Series = 3,
+                        Repetitions = 10,
+                        Weight = 50
+                    }
+                ]
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = Guid.NewGuid(),
+                Date = workoutDate.AddYears(1),
+                Type = "Private weekly summary",
+                UserId = otherUserId
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = Guid.NewGuid(),
+                Date = workoutDate.AddYears(2),
+                Type = "Empty workout shell",
+                UserId = TestDataSeeder.TestUserId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.GetAsync(
+            "/workouts/weekly-summary?weeks=1");
+        var summary = await response.Content
+            .ReadFromJsonAsync<WeeklyTrainingSummaryResource>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        summary.Should().NotBeNull();
+        summary!.Weeks.Should().ContainSingle();
+        var week = summary.Weeks[0];
+        week.WorkoutCount.Should().Be(1);
+        week.ExerciseCount.Should().Be(1);
+        week.TotalLoad.Should().Be(1500);
+        week.Sessions.Should().ContainSingle(session =>
+            session.Key == workoutId.ToString()
+            && session.Label == "Weekly summary test");
+        week.Sessions[0].Exercises.Should().ContainSingle(exercise =>
+            exercise.Name == "Bench Press"
+            && exercise.Prescription == "3 x 10 @ 50 kg");
+        week.Regions.Should().Contain(region =>
+            region.Key == "chest"
+            && region.Load > 0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(53)]
+    public async Task WeeklySummary_Rejects_Invalid_WeekLimit(int weeks)
+    {
+        var response = await Client.GetAsync(
+            $"/workouts/weekly-summary?weeks={weeks}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task GetWorkout_Does_Not_Expose_Another_Users_Workout()
     {
         var otherUserId = $"history-user-{Guid.NewGuid():N}";
