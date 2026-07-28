@@ -246,7 +246,7 @@ public class WorkoutsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return Unexpected("Failed to add the exercise to today's workout.", ex);
+            return Unexpected("Failed to add the exercise to the workout.", ex);
         }
     }
 
