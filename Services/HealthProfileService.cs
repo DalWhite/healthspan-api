@@ -1,3 +1,5 @@
+#nullable enable
+
 using Microsoft.EntityFrameworkCore;
 
 namespace Services;
@@ -14,8 +16,13 @@ public sealed class HealthProfileService(MainDbContext context)
             .SingleOrDefaultAsync(
                 item => item.UserId == userId,
                 cancellationToken);
+        var user = await context.Users
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                item => item.Id == userId,
+                cancellationToken);
 
-        return Map(profile);
+        return Map(profile, user);
     }
 
     public async Task<HealthProfileResource> UpdateAsync(
@@ -35,18 +42,42 @@ public sealed class HealthProfileService(MainDbContext context)
             context.HealthProfiles.Add(profile);
         }
 
+        var user = await context.Users
+            .SingleAsync(
+                item => item.Id == userId,
+                cancellationToken);
+
         profile.DateOfBirth = resource.DateOfBirth;
         profile.BiologicalSex = resource.BiologicalSex;
+        if (resource.Name is not null)
+        {
+            user.Name = string.IsNullOrWhiteSpace(resource.Name)
+                ? null
+                : resource.Name.Trim();
+        }
+        if (resource.HeightCm.HasValue)
+        {
+            user.Height = resource.HeightCm;
+        }
+        if (resource.WeightKg.HasValue)
+        {
+            user.Weight = resource.WeightKg;
+        }
         await context.SaveChangesAsync(cancellationToken);
 
-        return Map(profile);
+        return Map(profile, user);
     }
 
-    private static HealthProfileResource Map(HealthProfile profile)
+    private static HealthProfileResource Map(
+        HealthProfile? profile,
+        User? user)
         => new()
         {
+            Name = user?.Name,
             DateOfBirth = profile?.DateOfBirth,
             BiologicalSex =
-                profile?.BiologicalSex ?? BiologicalSex.Unknown
+                profile?.BiologicalSex ?? BiologicalSex.Unknown,
+            HeightCm = user?.Height,
+            WeightKg = user?.Weight
         };
 }
