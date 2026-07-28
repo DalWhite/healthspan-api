@@ -1,13 +1,12 @@
-using healthspan_api.Events;
-using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Services;
 namespace healthspan_api.Persistence.Repositories;
 
-public class ExercisesRepository(MainDbContext context, IMediator mediator)
+public class ExercisesRepository(MainDbContext context)
 {
   public Guid AddExercise(Exercise exercise, string userId)
   {
+    exercise.Tags = ExerciseTagNormalizer.Normalize(exercise.Tags);
     CalculateComputedValues(exercise, userId);
 
     context.Exercises.Add(exercise);
@@ -15,24 +14,35 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
 
     return exercise.Id;
   }
-  public void DeleteExercise(Guid id)
+  public bool DeleteExercise(Guid id, string userId)
   {
-    var exerciseToDelete = context.Exercises.FirstOrDefault(e => e.Id == id);
+    var exerciseToDelete = context.Exercises
+      .IgnoreQueryFilters()
+      .FirstOrDefault(exercise =>
+        exercise.Id == id
+        && exercise.Workout.UserId == userId);
+    if (exerciseToDelete is null)
+    {
+      return false;
+    }
+
     context.Remove(exerciseToDelete);
     context.SaveChanges();
+    return true;
   }
 
-  public Exercise GetExercise(Guid Id)
+  public Exercise GetExercise(Guid id, string userId)
   {
     return context.Exercises
+      .IgnoreQueryFilters()
+      .Where(exercise => exercise.Workout.UserId == userId)
       .Include(e => e.Type)
         .ThenInclude(type => type.MuscleAssignments)
           .ThenInclude(assignment => assignment.Muscle)
       .Include(e => e.Workout)
-      .IgnoreQueryFilters()
-      .FirstOrDefault(e => e.Id == Id);
+      .FirstOrDefault(e => e.Id == id);
   }
-  public List<Exercise> GetExercises(string userId)
+  public List<Exercise> GetExercises(string userId, string tag = "")
   {
     var query = context.Exercises
       .Include(e => e.Type)
@@ -48,11 +58,14 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
         .Where(e => e.Workout.User.Id == userId);
     }
 
-    return query.ToList();
+    return FilterByTag(query.ToList(), tag);
   }
-  public List<Exercise> GetExercisesByType(int exerciseTypeId, string userId)
+  public List<Exercise> GetExercisesByType(
+    int exerciseTypeId,
+    string userId,
+    string tag = "")
   {
-    return context.Exercises
+    var exercises = context.Exercises
       .IgnoreQueryFilters()
       .Where(e => e.Workout.UserId == userId)
       .Where(e => e.TypeId == exerciseTypeId)
@@ -61,62 +74,166 @@ public class ExercisesRepository(MainDbContext context, IMediator mediator)
           .ThenInclude(assignment => assignment.Muscle)
       .Include(e => e.Workout)
       .ToList();
+
+    return FilterByTag(exercises, tag);
   }
-  public void UpdateExercise(Exercise exercise, string userId)
+  public ExerciseUpdateResult UpdateExercise(
+    ExerciseUpdateCommand command,
+    string userId)
   {
-    var existingEntity = GetExercise(exercise.Id);
-    if (exercise.Series is not null)
+    var existingEntity = GetExercise(command.Id, userId);
+    if (existingEntity is null)
     {
-      existingEntity.Series = exercise.Series;
+      return new ExerciseUpdateResult(ExerciseUpdateStatus.NotFound);
     }
-    if (exercise.Repetitions is not null)
+
+    if (command.WorkoutId.HasValue &&
+        command.WorkoutId.Value != existingEntity.WorkoutId)
     {
-      existingEntity.Repetitions = exercise.Repetitions;
+      var targetWorkout = context.Workouts
+        .IgnoreQueryFilters()
+        .FirstOrDefault(workout =>
+          workout.Id == command.WorkoutId.Value
+          && workout.UserId == userId);
+      if (targetWorkout is null)
+      {
+        return new ExerciseUpdateResult(ExerciseUpdateStatus.WorkoutNotFound);
+      }
+
+      existingEntity.WorkoutId = targetWorkout.Id;
+      existingEntity.Workout = targetWorkout;
     }
-    if (exercise.Weight is not null)
+
+    if (command.TypeId.HasValue &&
+        command.TypeId.Value != existingEntity.TypeId)
     {
-      existingEntity.Weight = exercise.Weight;
+      var targetType = context.ExerciseTypes
+        .Include(type => type.MuscleAssignments)
+          .ThenInclude(assignment => assignment.Muscle)
+        .FirstOrDefault(type => type.Id == command.TypeId.Value);
+      if (targetType is null)
+      {
+        return new ExerciseUpdateResult(ExerciseUpdateStatus.ExerciseTypeNotFound);
+      }
+
+      existingEntity.TypeId = targetType.Id;
+      existingEntity.Type = targetType;
     }
-    if (exercise.Type is not null)
+
+    if (command.Series.HasValue)
     {
-      existingEntity.TypeId = exercise.TypeId;
+      existingEntity.Series = command.Series;
     }
-    //FIX: this is wrong. Should try get a workout on that date. If there is one, swap workout. If not, create one.
-    existingEntity.Workout.Date = exercise.Workout.Date;
-    if (existingEntity.Workout.DailySessionKey is not null &&
-        exercise.Workout.Date is not null)
+    if (command.Repetitions.HasValue)
     {
-      existingEntity.Workout.DailySessionKey = WorkoutDailySessionKey.Create(
-        existingEntity.Workout.UserId,
-        DateOnly.FromDateTime(exercise.Workout.Date.Value));
+      existingEntity.Repetitions = command.Repetitions;
     }
+    if (command.Weight.HasValue)
+    {
+      existingEntity.Weight = command.Weight;
+    }
+    if (command.Comments is not null)
+    {
+      existingEntity.Comments = command.Comments;
+    }
+    if (command.Tags is not null)
+    {
+      existingEntity.Tags = ExerciseTagNormalizer.Normalize(command.Tags);
+    }
+
+    CalculateComputedValues(existingEntity, userId);
     context.SaveChanges();
-    mediator.Publish(new ExerciseUpdatedEvent(existingEntity, userId));
+    return new ExerciseUpdateResult(
+      ExerciseUpdateStatus.Updated,
+      existingEntity);
   }
+
   public void CalculateComputedValues(Exercise exercise, string userId)
   {
-    var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
-    exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
-    exercise.Volume = (int?)(exercise.Repetitions * exercise.Series * exercise.Weight);
+    var weightType = exercise.Type?.WeightType;
+    if (weightType is null && exercise.TypeId.HasValue)
+    {
+      weightType = context.ExerciseTypes
+        .AsNoTracking()
+        .Where(type => type.Id == exercise.TypeId.Value)
+        .Select(type => type.WeightType)
+        .FirstOrDefault();
+    }
 
-    double? historicMaxRepetition = exercise.MaxRepetition;
-        
-    var exercisesOfType = GetExercisesByType((int)exercise.TypeId, userId);
-        
-    if (exercisesOfType.Any())
+    if (string.Equals(weightType, "None", StringComparison.OrdinalIgnoreCase))
     {
-      historicMaxRepetition = exercisesOfType
-        .OrderByDescending(e => e.MaxRepetition)
-        .Select(e => e.MaxRepetition)
-        .First();
+      exercise.Weight = 0;
+      exercise.MaxRepetition = null;
+      exercise.Volume = null;
+      exercise.Intensity = null;
+      return;
     }
-    if(exercise.Weight != 0)
+
+    var weight = Math.Max(0, exercise.Weight ?? 0);
+    var repetitions = Math.Max(0, exercise.Repetitions ?? 0);
+    var series = Math.Max(0, exercise.Series ?? 0);
+    exercise.Weight = weight;
+    exercise.MaxRepetition = Math.Round(
+      weight * (1 + 0.0333 * repetitions),
+      1);
+    exercise.Volume = (int)(repetitions * series * weight);
+
+    var historicMaxRepetition = exercise.TypeId.HasValue
+      ? context.Exercises
+        .IgnoreQueryFilters()
+        .Where(candidate =>
+          candidate.Id != exercise.Id
+          && candidate.TypeId == exercise.TypeId
+          && candidate.Workout.UserId == userId
+          && candidate.MaxRepetition.HasValue)
+        .Select(candidate => candidate.MaxRepetition)
+        .ToList()
+        .DefaultIfEmpty()
+        .Max()
+      : null;
+    var referenceMax = Math.Max(
+      exercise.MaxRepetition ?? 0,
+      historicMaxRepetition ?? 0);
+
+    if (weight > 0 && referenceMax > 0)
     {
-      exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
+      exercise.Intensity = (int)Math.Round(weight / referenceMax * 100);
+      return;
     }
-    else
-    {
-      exercise.Intensity = 0;
-    }
+
+    exercise.Intensity = null;
   }
+
+  private static List<Exercise> FilterByTag(
+    List<Exercise> exercises,
+    string tag)
+    => string.IsNullOrWhiteSpace(tag)
+      ? exercises
+      : exercises
+        .Where(exercise => ExerciseTagNormalizer.Matches(
+          exercise.Tags,
+          tag))
+        .ToList();
+}
+
+public sealed record ExerciseUpdateCommand(
+  Guid Id,
+  int? Series,
+  int? Repetitions,
+  double? Weight,
+  string Comments,
+  IReadOnlyCollection<string> Tags,
+  int? TypeId,
+  Guid? WorkoutId);
+
+public sealed record ExerciseUpdateResult(
+  ExerciseUpdateStatus Status,
+  Exercise Exercise = null);
+
+public enum ExerciseUpdateStatus
+{
+  Updated,
+  NotFound,
+  WorkoutNotFound,
+  ExerciseTypeNotFound
 }

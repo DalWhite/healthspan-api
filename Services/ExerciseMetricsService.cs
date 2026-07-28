@@ -11,27 +11,58 @@ public class ExerciseMetricsService
         _exercisesRepository = exercisesRepository;
     }
 
-    public GetExerciseTypeKpis GetExerciseTypeKpisOfUser(int exerciseTypeId, string userId)
+    public GetExerciseTypeKpis GetExerciseTypeKpisOfUser(
+        int exerciseTypeId,
+        string userId,
+        string tag = "")
     {
-        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId, userId);
+        var typeExercises = _exercisesRepository.GetExercisesByType(
+            exerciseTypeId,
+            userId,
+            tag);
         if (typeExercises.Count is 0)
         {
             return new GetExerciseTypeKpis();
         }
+
+        var weeklyFrequency = CalculateWeeklyFrequency(
+            typeExercises,
+            exerciseTypeId);
+        var exercisesWithLoadMetrics = typeExercises
+            .Where(exercise =>
+                exercise.Workout?.Date.HasValue == true
+                && exercise.MaxRepetition.HasValue)
+            .ToList();
+        if (exercisesWithLoadMetrics.Count == 0)
+        {
+            return new GetExerciseTypeKpis
+            {
+                WeeklyFrequency = weeklyFrequency
+            };
+        }
+
         // Group exercises by session (e.g., by date) and calculate max RM per session
-        var sessions = typeExercises
+        var sessions = exercisesWithLoadMetrics
             .GroupBy(e => e.Workout.Date)
-            .Select(g => new { Date = g.Key, MaxRM = g.Max(e => e.MaxRepetition) })
+            .Select(g => new
+            {
+                Date = g.Key,
+                MaxRM = g.Max(e => e.MaxRepetition!.Value)
+            })
             .OrderBy(s => s.Date)
             .ToList();
+        var maximum = sessions.Max(session => session.MaxRM);
 
         var result = new GetExerciseTypeKpis
         {
-            MaxRM = (float)sessions.Max(s => s.MaxRM),
-            MaxRMDate = typeExercises.First(e => e.MaxRepetition == sessions.Max(s => s.MaxRM)).Workout.Date.Value,
+            MaxRM = (float)maximum,
+            MaxRMDate = exercisesWithLoadMetrics
+                .First(e => e.MaxRepetition == maximum)
+                .Workout.Date!.Value,
             Current1RM = (float)sessions.Last().MaxRM,
-            RMDiferentialInLast3Months = CalculateRMDiferentialInLast3Months(typeExercises),
-            WeeklyFrequency = CalculateWeeklyFrequency(typeExercises, exerciseTypeId),
+            RMDiferentialInLast3Months =
+                CalculateRMDiferentialInLast3Months(exercisesWithLoadMetrics),
+            WeeklyFrequency = weeklyFrequency,
             PerceibedEffortLastSession = 5
         };
 
@@ -40,20 +71,24 @@ public class ExerciseMetricsService
 
     private int CalculateRMDiferentialInLast3Months(IEnumerable<Exercise> typeExercises)
     {
-        var exercisesInlast3Months = typeExercises.Where(e => e.Workout.Date >= DateTime.Now.AddMonths(-3));
+        var exercisesInlast3Months = typeExercises
+            .Where(e =>
+                e.Workout?.Date >= DateTime.Now.AddMonths(-3)
+                && e.MaxRepetition.HasValue)
+            .ToList();
 
         var oldestExercise = exercisesInlast3Months.MinBy(e => e.Workout.Date);
         var newestExercise = exercisesInlast3Months.MaxBy(e => e.Workout.Date);
 
-        if (oldestExercise == null)
+        if (oldestExercise == null || newestExercise == null)
         {
             return 0;
         }
 
-        var currentMax = newestExercise.MaxRepetition;
-        var previousMax = oldestExercise.MaxRepetition;
+        var currentMax = newestExercise.MaxRepetition!.Value;
+        var previousMax = oldestExercise.MaxRepetition!.Value;
 
-        return (int)(currentMax - previousMax);
+        return (int)Math.Round(currentMax - previousMax);
     }
 
     private int CalculateWeeklyFrequency(IEnumerable<Exercise> typeExercises, int exerciseTypeId)
@@ -63,18 +98,27 @@ public class ExerciseMetricsService
         return typeSessions;
     }
 
-    public GetExerciseTypeTrends GetExerciseTypeTrendsOfUser(int exerciseTypeId, TrendKpiType type, string userId)
+    public GetExerciseTypeTrends GetExerciseTypeTrendsOfUser(
+        int exerciseTypeId,
+        TrendKpiType type,
+        string userId,
+        string tag = "")
     {
-        var typeExercises = _exercisesRepository.GetExercisesByType(exerciseTypeId, userId).OrderBy(e => e.Workout.Date);
+        var typeExercises = _exercisesRepository
+            .GetExercisesByType(exerciseTypeId, userId, tag)
+            .OrderBy(e => e.Workout.Date);
         var result = new GetExerciseTypeTrends() { Points = new List<DataPoint>() };
 
         // Group exercises by session (e.g., by date) and calculate max RM per session
         var maxRMPerSession = typeExercises
+            .Where(exercise =>
+                exercise.Workout?.Date.HasValue == true
+                && exercise.MaxRepetition.HasValue)
             .GroupBy(e => e.Workout.Date)
             .Select(g => new DataPoint
             {
-                Data = (float)g.Max(e => e.MaxRepetition),
-                Time = g.Key.Value
+                Data = (float)g.Max(e => e.MaxRepetition!.Value),
+                Time = g.Key!.Value
             })
             .ToList();
 
@@ -85,47 +129,29 @@ public class ExerciseMetricsService
                 break;
 
             case TrendKpiType.Volume:
-                result.Points.AddRange(typeExercises.Select(exercise => new DataPoint
-                {
-                    Data = (float)exercise.Volume,
-                    Time = (DateTime)exercise.Workout.Date
-                }));
+                result.Points.AddRange(typeExercises
+                    .Where(exercise =>
+                        exercise.Workout?.Date.HasValue == true
+                        && exercise.Volume.HasValue)
+                    .Select(exercise => new DataPoint
+                    {
+                        Data = exercise.Volume!.Value,
+                        Time = exercise.Workout.Date!.Value
+                    }));
                 break;
 
             case TrendKpiType.Intensity:
-                result.Points.AddRange(typeExercises.Select(exercise => new DataPoint
-                {
-                    Data = (float)exercise.Intensity,
-                    Time = (DateTime)exercise.Workout.Date
-                }));
+                result.Points.AddRange(typeExercises
+                    .Where(exercise =>
+                        exercise.Workout?.Date.HasValue == true
+                        && exercise.Intensity.HasValue)
+                    .Select(exercise => new DataPoint
+                    {
+                        Data = exercise.Intensity!.Value,
+                        Time = exercise.Workout.Date!.Value
+                    }));
                 break;
         }
         return result;
-    }
-    public void CalculateComputedValues(Exercise exercise, string userId)
-    {
-        var raw1RMCalculation = exercise.Weight * (1 + 0.0333 * exercise.Repetitions);
-        exercise.MaxRepetition = Math.Round((double)raw1RMCalculation,1);
-        exercise.Volume = (int?)(exercise.Repetitions * exercise.Series * exercise.Weight);
-
-        double? historicMaxRepetition = exercise.MaxRepetition;
-        
-        var exercisesOfType = _exercisesRepository.GetExercisesByType((int)exercise.TypeId, userId);
-        
-        if (exercisesOfType.Any())
-        {
-            historicMaxRepetition = exercisesOfType
-                .OrderByDescending(e => e.MaxRepetition)
-                .Select(e => e.MaxRepetition)
-                .First();
-        }
-        if(exercise.Weight != 0)
-        {
-            exercise.Intensity = (int?)(exercise.Weight / historicMaxRepetition * 100);
-        }
-        else
-        {
-            exercise.Intensity = 0;
-        }
     }
 }

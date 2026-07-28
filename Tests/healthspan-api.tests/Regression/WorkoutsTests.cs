@@ -472,7 +472,8 @@ public class WorkoutsTests : ApiTestBase
                 TypeId = TestDataSeeder.SquatTypeId,
                 Series = 3,
                 Repetitions = 10,
-                Weight = 60
+                Weight = 60,
+                Tags = ["Bilbo"]
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -483,6 +484,7 @@ public class WorkoutsTests : ApiTestBase
         updatedSession.Exercises[0].Series.Should().Be(3);
         updatedSession.Exercises[0].Repetitions.Should().Be(10);
         updatedSession.Exercises[0].Weight.Should().Be(60);
+        updatedSession.Exercises[0].Tags.Should().Equal("Bilbo");
     }
 
     [Fact]

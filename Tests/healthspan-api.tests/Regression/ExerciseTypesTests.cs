@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Controllers.ApiContracts.ExerciseTypes;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -220,11 +221,16 @@ public class ExerciseTypesTests : ApiTestBase
     }
 
     [Fact]
-    public async Task DeleteExerciseType_WhenUsedByExercises_Returns_BadRequest()
+    public async Task DeleteExerciseType_WhenUsedByExercises_Returns_ConflictProblem()
     {
         var response = await Client.DeleteAsync($"/exercisetypes/{TestDataSeeder.BenchPressTypeId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString()
+            .Should().Contain("workout history");
     }
 
     [Fact]

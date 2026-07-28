@@ -18,5 +18,6 @@ public class WorkoutHistoryExerciseResource
     public double? Weight { get; set; }
     public double Volume { get; set; }
     public string Comments { get; set; }
+    public List<string> Tags { get; set; } = [];
     public List<string> Muscles { get; set; } = [];
 }
