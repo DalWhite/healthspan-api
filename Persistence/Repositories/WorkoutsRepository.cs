@@ -12,12 +12,6 @@ public class WorkoutsRepository
     {
         _context = context;
     }
-    public Guid AddWorkout(Workout workout)
-    {
-        _context.Workouts.Add(workout);
-        _context.SaveChanges();
-        return workout.Id;
-    }
     public async Task<WorkoutHistoryPage> GetWorkoutHistoryAsync(
         string userId,
         DateOnly? from,
@@ -88,12 +82,9 @@ public class WorkoutsRepository
             workout.Type = type.Trim();
         }
 
-        if (workout.DailySessionKey is not null)
-        {
-            workout.DailySessionKey = WorkoutDailySessionKey.Create(
-                workout.UserId,
-                DateOnly.FromDateTime(date));
-        }
+        workout.DailySessionKey = WorkoutDailySessionKey.Create(
+            workout.UserId,
+            DateOnly.FromDateTime(date));
 
         await _context.SaveChangesAsync(cancellationToken);
         return workout;
@@ -136,10 +127,10 @@ public class WorkoutsRepository
     {
         var start = date.ToDateTime(TimeOnly.MinValue);
         var end = start.AddDays(1);
-        var dailySessionKey = WorkoutDailySessionKey.Create(userId, date);
-
         return SessionQuery(userId)
-            .OrderByDescending(workout => workout.DailySessionKey == dailySessionKey)
+            .OrderByDescending(workout => workout.Exercises.Any())
+            .ThenBy(workout => workout.Date)
+            .ThenBy(workout => workout.Id)
             .FirstOrDefaultAsync(
                 workout => workout.Date >= start && workout.Date < end,
                 cancellationToken);
@@ -170,7 +161,9 @@ public class WorkoutsRepository
             var start = date.ToDateTime(TimeOnly.MinValue);
             var end = start.AddDays(1);
             var existing = await SessionQuery(userId, asNoTracking: false)
-                .OrderByDescending(workout => workout.DailySessionKey == dailySessionKey)
+                .OrderByDescending(workout => workout.Exercises.Any())
+                .ThenBy(workout => workout.Date)
+                .ThenBy(workout => workout.Id)
                 .FirstOrDefaultAsync(
                     workout => workout.Date >= start && workout.Date < end,
                     cancellationToken);
@@ -179,6 +172,19 @@ public class WorkoutsRepository
             {
                 if (existing.DailySessionKey != dailySessionKey)
                 {
+                    var conflictingWorkout = await _context.Workouts
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(
+                            workout =>
+                                workout.Id != existing.Id
+                                && workout.DailySessionKey == dailySessionKey,
+                            cancellationToken);
+                    if (conflictingWorkout is not null)
+                    {
+                        conflictingWorkout.DailySessionKey = null;
+                        await _context.SaveChangesAsync(cancellationToken);
+                    }
+
                     existing.DailySessionKey = dailySessionKey;
                     await _context.SaveChangesAsync(cancellationToken);
                 }
@@ -222,9 +228,14 @@ public class WorkoutsRepository
 
             _context.ChangeTracker.Clear();
 
+            var start = date.ToDateTime(TimeOnly.MinValue);
+            var end = start.AddDays(1);
             var existing = await SessionQuery(userId)
+                .OrderByDescending(workout => workout.Exercises.Any())
+                .ThenBy(workout => workout.Date)
+                .ThenBy(workout => workout.Id)
                 .FirstOrDefaultAsync(
-                    workout => workout.DailySessionKey == dailySessionKey,
+                    workout => workout.Date >= start && workout.Date < end,
                     cancellationToken);
 
             if (existing is not null)

@@ -27,7 +27,9 @@ public class DataController : ControllerBase
         return File(content, "text/csv", "exercisesImportTemplate.csv");
     }
     [HttpPost("import")]
-    public IActionResult ImportExercisesCsvData(IFormFile file)
+    public async Task<IActionResult> ImportExercisesCsvData(
+        IFormFile file,
+        CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)
         {
@@ -40,25 +42,30 @@ public class DataController : ControllerBase
             return BadRequest("File must be a CSV.");
         }
         var exerciseGroups = _csvService.ReadCsvExercisesAndGroupByDate(file);
-        AddExercisesToDatabase(exerciseGroups);
+        await AddExercisesToDatabaseAsync(
+            exerciseGroups,
+            cancellationToken);
 
         return Ok("Data imported successfully.");
     }
 
-    private void AddExercisesToDatabase(Dictionary<DateTime, List<Exercise>> exerciseGroups)
+    private async Task AddExercisesToDatabaseAsync(
+        Dictionary<DateTime, List<Exercise>> exerciseGroups,
+        CancellationToken cancellationToken)
     {
+        var userId = _userProvider.GetCurrentUserId();
         foreach (var group in exerciseGroups)
         {
-            var workout = new Workout
-            {
-                Date = group.Key,
-                UserId = _userProvider.GetCurrentUserId()
-            };
-            var workoutId = _workoutsRepository.AddWorkout(workout);
+            var result = await _workoutsRepository
+                .GetOrCreateWorkoutSessionAsync(
+                    userId,
+                    DateOnly.FromDateTime(group.Key),
+                    "Training",
+                    cancellationToken);
             foreach (var ex in group.Value)
             {
-                ex.WorkoutId = workoutId;
-                _exercisesRepository.AddExercise(ex, _userProvider.GetCurrentUserId());
+                ex.WorkoutId = result.Workout.Id;
+                _exercisesRepository.AddExercise(ex, userId);
             }
         }
     }
