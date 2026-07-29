@@ -9,5 +9,7 @@ public class GetBloodTestResource
     public BloodTestProcessingStatus ProcessingStatus { get; set; }
     public string? ProcessingNotes { get; set; }
     public bool RequiresReview { get; set; }
+    public int MarkerCount { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
     public List<BloodTestMarkerResource> Markers { get; set; } = new();
 }

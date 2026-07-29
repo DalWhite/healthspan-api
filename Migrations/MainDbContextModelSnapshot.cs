@@ -87,6 +87,10 @@ namespace healthspan_api.Migrations
                     b.Property<string>("SourceBlobUri")
                         .HasColumnType("longtext");
 
+                    b.Property<string>("SourceContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<string>("SourceContentType")
                         .HasColumnType("longtext");
 
@@ -107,7 +111,7 @@ namespace healthspan_api.Migrations
 
                     b.HasIndex("SourceBlobName");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "SourceContentHash");
 
                     b.ToTable("BloodTests");
                 });
@@ -149,6 +153,9 @@ namespace healthspan_api.Migrations
 
                     b.Property<decimal?>("ReferenceMinValue")
                         .HasColumnType("decimal(65,30)");
+
+                    b.Property<bool>("ReferenceRangeFromReport")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Status")
                         .IsRequired()

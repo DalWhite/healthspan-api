@@ -17,6 +17,7 @@ public class BloodTestMarkerResult
     public MarkerStatus Status { get; set; } = MarkerStatus.RequiresReview;
     public decimal? ReferenceMinValue { get; set; }
     public decimal? ReferenceMaxValue { get; set; }
+    public bool ReferenceRangeFromReport { get; set; }
 }
 
 public enum MarkerStatus

@@ -12,6 +12,7 @@ public class BloodTest
     public string? SourceBlobContainer { get; set; }
     public string? SourceBlobName { get; set; }
     public string? SourceBlobUri { get; set; }
+    public string? SourceContentHash { get; set; }
     public BloodTestProcessingStatus ProcessingStatus { get; set; } = BloodTestProcessingStatus.PendingReview;
     public string? ProcessingNotes { get; set; }
     public string? RawExtractionPayload { get; set; }

@@ -124,6 +124,17 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
             .HasIndex(test => test.SourceBlobName);
 
         builder.Entity<BloodTest>()
+            .Property(test => test.SourceContentHash)
+            .HasMaxLength(64);
+
+        builder.Entity<BloodTest>()
+            .HasIndex(test => new
+            {
+                test.UserId,
+                test.SourceContentHash
+            });
+
+        builder.Entity<BloodTest>()
             .HasMany(test => test.MarkerResults)
             .WithOne(result => result.BloodTest)
             .HasForeignKey(result => result.BloodTestId)
