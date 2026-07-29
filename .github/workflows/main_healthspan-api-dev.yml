@@ -50,11 +50,12 @@ jobs:
           name: .net-app
           path: ./publish
 
-      - name: Run EF 
-        run: | 
-          dotnet tool install --global dotnet-ef --version 9.0.11 
-          dotnet tool restore
-          dotnet-ef database update --project healthspan-api.csproj
+      - name: Apply EF migrations
+        env:
+          DbConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
+        run: |
+          dotnet tool install --global dotnet-ef --version 9.0.11
+          dotnet-ef database update --project healthspan-api.csproj --configuration Release --no-build
 
   deploy:
     runs-on: windows-latest
