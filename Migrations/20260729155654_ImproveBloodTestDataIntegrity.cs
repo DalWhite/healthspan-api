@@ -10,10 +10,6 @@ namespace healthspan_api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_BloodTests_UserId",
-                table: "BloodTests");
-
             migrationBuilder.AddColumn<string>(
                 name: "SourceContentHash",
                 table: "BloodTests",
@@ -49,11 +45,6 @@ namespace healthspan_api.Migrations
             migrationBuilder.DropColumn(
                 name: "ReferenceRangeFromReport",
                 table: "BloodTestMarkerResults");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BloodTests_UserId",
-                table: "BloodTests",
-                column: "UserId");
         }
     }
 }
