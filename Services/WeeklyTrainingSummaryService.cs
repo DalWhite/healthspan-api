@@ -45,12 +45,14 @@ public sealed class WeeklyTrainingSummaryService(
             .Take(weekLimit)
             .Select(group => BuildWeek(group.Key, group))
             .ToList();
-        var activityStart = DateTime.UtcNow.Date.AddDays(-34);
+        var today = DateTime.UtcNow.Date;
+        var activityStart =
+            new DateTime(today.Year, today.Month, 1).AddMonths(-1);
         var activityDays = workouts
             .Where(workout =>
                 workout.Date.HasValue
                 && workout.Date.Value.Date >= activityStart
-                && workout.Date.Value.Date <= DateTime.UtcNow.Date
+                && workout.Date.Value.Date <= today
                 && workout.Exercises?.Count > 0)
             .GroupBy(workout => workout.Date!.Value.Date)
             .OrderBy(group => group.Key)
