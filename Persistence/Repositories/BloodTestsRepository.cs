@@ -13,13 +13,24 @@ public class BloodTestsRepository(MainDbContext context)
         return bloodTest.Id;
     }
 
-    public List<BloodTest> GetBloodTests(string userId)
+    public List<BloodTestSummary> GetBloodTestSummaries(
+        string userId)
     {
         return context.BloodTests
             .IgnoreQueryFilters()
             .Where(test => test.UserId == userId)
-            .Include(test => test.MarkerResults)
             .OrderByDescending(test => test.TestDate)
+            .Select(test => new BloodTestSummary
+            {
+                Id = test.Id,
+                TestDate = test.TestDate,
+                LabName = test.LabName,
+                SourceFileName = test.SourceFileName,
+                ProcessingStatus = test.ProcessingStatus,
+                ProcessingNotes = test.ProcessingNotes,
+                MarkerCount = test.MarkerResults.Count,
+                UpdatedAtUtc = test.UpdatedAtUtc
+            })
             .ToList();
     }
 
@@ -32,13 +43,24 @@ public class BloodTestsRepository(MainDbContext context)
             .FirstOrDefault(test => test.Id == id);
     }
 
-    public List<BloodTest> GetPendingReviewBloodTests(string userId)
+    public List<BloodTestSummary>
+        GetPendingReviewBloodTestSummaries(string userId)
     {
         return context.BloodTests
             .IgnoreQueryFilters()
             .Where(test => test.UserId == userId && test.ProcessingStatus == BloodTestProcessingStatus.PendingReview)
-            .Include(test => test.MarkerResults)
             .OrderByDescending(test => test.TestDate)
+            .Select(test => new BloodTestSummary
+            {
+                Id = test.Id,
+                TestDate = test.TestDate,
+                LabName = test.LabName,
+                SourceFileName = test.SourceFileName,
+                ProcessingStatus = test.ProcessingStatus,
+                ProcessingNotes = test.ProcessingNotes,
+                MarkerCount = test.MarkerResults.Count,
+                UpdatedAtUtc = test.UpdatedAtUtc
+            })
             .ToList();
     }
 }

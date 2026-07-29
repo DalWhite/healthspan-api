@@ -4,7 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Services;
 
-public sealed class HealthProfileService(MainDbContext context)
+public sealed class HealthProfileService(
+    MainDbContext context,
+    BloodAnalyticsService bloodAnalyticsService)
 {
     public async Task<HealthProfileResource> GetAsync(
         string userId,
@@ -64,6 +66,10 @@ public sealed class HealthProfileService(MainDbContext context)
             user.Weight = resource.WeightKg;
         }
         await context.SaveChangesAsync(cancellationToken);
+        await bloodAnalyticsService
+            .ReclassifyMarkersForUserAsync(
+                userId,
+                cancellationToken);
 
         return Map(profile, user);
     }

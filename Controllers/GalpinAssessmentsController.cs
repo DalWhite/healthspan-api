@@ -14,13 +14,20 @@ public class GalpinAssessmentsController : ControllerBase
     private readonly GalpinAssessmentCatalogService _catalogService;
     private readonly CurrentUserProvider _currentUserProvider;
     private readonly HealthAccessService _healthAccessService;
+    private readonly ILogger<GalpinAssessmentsController> _logger;
 
-    public GalpinAssessmentsController(GalpinAssessmentService assessmentService, GalpinAssessmentCatalogService catalogService, CurrentUserProvider currentUserProvider, HealthAccessService healthAccessService)
+    public GalpinAssessmentsController(
+        GalpinAssessmentService assessmentService,
+        GalpinAssessmentCatalogService catalogService,
+        CurrentUserProvider currentUserProvider,
+        HealthAccessService healthAccessService,
+        ILogger<GalpinAssessmentsController> logger)
     {
         _assessmentService = assessmentService;
         _catalogService = catalogService;
         _currentUserProvider = currentUserProvider;
         _healthAccessService = healthAccessService;
+        _logger = logger;
     }
 
     [HttpGet("catalog")]
@@ -43,7 +50,11 @@ public class GalpinAssessmentsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            _logger.LogError(
+                ex,
+                "Failed to load Galpin assessments");
+            return ApiProblemResult.Unexpected(
+                "assessments_load_failed");
         }
     }
 
@@ -56,7 +67,9 @@ public class GalpinAssessmentsController : ControllerBase
             var assessment = _assessmentService.GetLatestAssessment(targetUserId);
             if (assessment is null)
             {
-                return NotFound("No Galpin assessment found.");
+                return ApiProblemResult.NotFound(
+                    "assessment_not_found",
+                    "No assessment has been recorded yet.");
             }
 
             return Ok(MapAssessment(assessment));
@@ -67,7 +80,11 @@ public class GalpinAssessmentsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            _logger.LogError(
+                ex,
+                "Failed to load the latest Galpin assessment");
+            return ApiProblemResult.Unexpected(
+                "latest_assessment_load_failed");
         }
     }
 
@@ -76,6 +93,13 @@ public class GalpinAssessmentsController : ControllerBase
     {
         try
         {
+            var validationProblem =
+                ValidateAssessment(resource);
+            if (validationProblem is not null)
+            {
+                return validationProblem;
+            }
+
             var userId = _currentUserProvider.GetCurrentUserId();
             var id = _assessmentService.CreateAssessment(
                 userId,
@@ -92,7 +116,11 @@ public class GalpinAssessmentsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            _logger.LogError(
+                ex,
+                "Failed to create a Galpin assessment");
+            return ApiProblemResult.Unexpected(
+                "assessment_create_failed");
         }
     }
 
@@ -101,24 +129,64 @@ public class GalpinAssessmentsController : ControllerBase
         Guid id,
         AddGalpinAssessmentResource resource)
     {
-        var userId = _currentUserProvider.GetCurrentUserId();
-        var updated = _assessmentService.UpdateAssessment(
-            userId,
-            id,
-            resource.AssessedOnUtc,
-            resource.Notes,
-            MapScores(resource));
+        try
+        {
+            var validationProblem =
+                ValidateAssessment(resource);
+            if (validationProblem is not null)
+            {
+                return validationProblem;
+            }
 
-        return updated ? NoContent() : NotFound();
+            var userId =
+                _currentUserProvider.GetCurrentUserId();
+            var updated = _assessmentService.UpdateAssessment(
+                userId,
+                id,
+                resource.AssessedOnUtc,
+                resource.Notes,
+                MapScores(resource));
+
+            return updated
+                ? NoContent()
+                : ApiProblemResult.NotFound(
+                    "assessment_not_found",
+                    "This assessment no longer exists.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to update assessment {AssessmentId}",
+                id);
+            return ApiProblemResult.Unexpected(
+                "assessment_update_failed");
+        }
     }
 
     [HttpDelete("{id}")]
     public IActionResult DeleteAssessment(Guid id)
     {
-        var userId = _currentUserProvider.GetCurrentUserId();
-        return _assessmentService.DeleteAssessment(userId, id)
-            ? NoContent()
-            : NotFound();
+        try
+        {
+            var userId =
+                _currentUserProvider.GetCurrentUserId();
+            return _assessmentService
+                .DeleteAssessment(userId, id)
+                ? NoContent()
+                : ApiProblemResult.NotFound(
+                    "assessment_not_found",
+                    "This assessment no longer exists.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to delete assessment {AssessmentId}",
+                id);
+            return ApiProblemResult.Unexpected(
+                "assessment_delete_failed");
+        }
     }
 
     [HttpGet("trends/{adaptation}")]
@@ -144,8 +212,64 @@ public class GalpinAssessmentsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            _logger.LogError(
+                ex,
+                "Failed to load trend for {Adaptation}",
+                adaptation);
+            return ApiProblemResult.Unexpected(
+                "assessment_trend_load_failed");
         }
+    }
+
+    private static ObjectResult? ValidateAssessment(
+        AddGalpinAssessmentResource resource)
+    {
+        if (resource.AssessedOnUtc == default
+            || resource.AssessedOnUtc.Date
+                > DateTime.UtcNow.Date)
+        {
+            return ApiProblemResult.Validation(
+                "assessment_date_invalid",
+                "Assessment date is required and cannot be in the future.");
+        }
+
+        if (resource.Scores is null
+            || resource.Scores.Count == 0)
+        {
+            return ApiProblemResult.Validation(
+                "assessment_scores_missing",
+                "Add at least one assessment score.");
+        }
+
+        var adaptations =
+            new HashSet<GalpinAdaptationType>();
+        foreach (var score in resource.Scores)
+        {
+            if (!Enum.IsDefined(score.Adaptation))
+            {
+                return ApiProblemResult.Validation(
+                    "assessment_adaptation_invalid",
+                    "One of the assessment areas is not valid.");
+            }
+
+            if (!adaptations.Add(score.Adaptation))
+            {
+                return ApiProblemResult.Validation(
+                    "assessment_adaptation_duplicate",
+                    "Each assessment area can appear only once.");
+            }
+
+            if (!score.Score.HasValue
+                || score.Score < 0
+                || score.Score > 10)
+            {
+                return ApiProblemResult.Validation(
+                    "assessment_score_invalid",
+                    "Scores must be between 0 and 10.");
+            }
+        }
+
+        return null;
     }
 
     private string ResolveTargetUserId(string? userId)

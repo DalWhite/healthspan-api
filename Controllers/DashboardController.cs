@@ -13,12 +13,18 @@ public class DashboardController : ControllerBase
     private readonly CurrentUserProvider _currentUserProvider;
     private readonly HealthAccessService _healthAccessService;
     private readonly HealthDashboardService _dashboardService;
+    private readonly ILogger<DashboardController> _logger;
 
-    public DashboardController(CurrentUserProvider currentUserProvider, HealthAccessService healthAccessService, HealthDashboardService dashboardService)
+    public DashboardController(
+        CurrentUserProvider currentUserProvider,
+        HealthAccessService healthAccessService,
+        HealthDashboardService dashboardService,
+        ILogger<DashboardController> logger)
     {
         _currentUserProvider = currentUserProvider;
         _healthAccessService = healthAccessService;
         _dashboardService = dashboardService;
+        _logger = logger;
     }
 
     [HttpGet("summary")]
@@ -37,7 +43,11 @@ public class DashboardController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest($"Error: {ex.Message}");
+            _logger.LogError(
+                ex,
+                "Failed to load the health overview");
+            return ApiProblemResult.Unexpected(
+                "health_overview_load_failed");
         }
     }
 }

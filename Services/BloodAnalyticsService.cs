@@ -2,6 +2,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using healthspan_api.Events;
 using healthspan_api.Persistence.Repositories;
 using MediatR;
@@ -40,9 +41,11 @@ public class BloodAnalyticsService
         _processingChannel = processingChannel;
     }
 
-    public List<BloodTest> GetBloodTests(string userId)
+    public List<BloodTestSummary> GetBloodTestSummaries(
+        string userId)
     {
-        return _bloodTestsRepository.GetBloodTests(userId);
+        return _bloodTestsRepository
+            .GetBloodTestSummaries(userId);
     }
 
     public BloodTest? GetBloodTest(Guid id, string userId)
@@ -50,9 +53,11 @@ public class BloodAnalyticsService
         return _bloodTestsRepository.GetBloodTest(id, userId);
     }
 
-    public List<BloodTest> GetPendingReviewBloodTests(string userId)
+    public List<BloodTestSummary>
+        GetPendingReviewBloodTestSummaries(string userId)
     {
-        return _bloodTestsRepository.GetPendingReviewBloodTests(userId);
+        return _bloodTestsRepository
+            .GetPendingReviewBloodTestSummaries(userId);
     }
 
     public async Task<Guid> CreateManualBloodTestAsync(string userId, DateTime testDate, string? labName, List<ManualBloodTestMarkerInput> markers)
@@ -66,7 +71,21 @@ public class BloodAnalyticsService
             TestDate = testDate,
             LabName = labName,
             ProcessingStatus = markers.Count == 0 ? BloodTestProcessingStatus.PendingReview : BloodTestProcessingStatus.Processed,
-            MarkerResults = markers.Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.Name, marker.Unit, marker.Value, marker.Value?.ToString(), 1)).ToList()
+            MarkerResults = markers.Select(marker => BuildMarkerResult(
+                profile,
+                allDefinitions,
+                testDate,
+                marker.Name,
+                marker.Name,
+                marker.Unit,
+                marker.Value,
+                marker.Value?.ToString(),
+                1,
+                marker.ReferenceMinValue,
+                marker.ReferenceMaxValue,
+                marker.ReferenceMinValue.HasValue
+                || marker.ReferenceMaxValue.HasValue,
+                requireConfidenceReview: false)).ToList()
         };
 
         var id = _bloodTestsRepository.AddBloodTest(bloodTest);
@@ -83,13 +102,31 @@ public class BloodAnalyticsService
         return id;
     }
 
-    public async Task<Guid> CreateUploadedBloodTestAsync(string userId, IFormFile file, DateTime testDate, string? labName, CancellationToken cancellationToken)
+    public async Task<BloodTestUploadCreationResult>
+        CreateUploadedBloodTestAsync(
+            string userId,
+            IFormFile file,
+            DateTime testDate,
+            string? labName,
+            CancellationToken cancellationToken)
     {
-        var storedDocument = await _documentStorage.StoreAsync(userId, file, cancellationToken);
-
         await using var memStream = new MemoryStream();
         await file.CopyToAsync(memStream, cancellationToken);
         var fileBytes = memStream.ToArray();
+        var contentHash = Convert.ToHexString(
+            SHA256.HashData(fileBytes));
+        var possibleDuplicateId = await _context.BloodTests
+            .IgnoreQueryFilters()
+            .Where(test =>
+                test.UserId == userId
+                && test.SourceContentHash == contentHash)
+            .OrderByDescending(test => test.CreatedAtUtc)
+            .Select(test => (Guid?)test.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        var storedDocument = await _documentStorage.StoreAsync(
+            userId,
+            file,
+            cancellationToken);
 
         var bloodTest = new BloodTest
         {
@@ -101,6 +138,7 @@ public class BloodAnalyticsService
             SourceBlobContainer = storedDocument?.ContainerName,
             SourceBlobName = storedDocument?.BlobName,
             SourceBlobUri = storedDocument?.BlobUri,
+            SourceContentHash = contentHash,
             ProcessingStatus = BloodTestProcessingStatus.Processing,
             ProcessingNotes = "Upload accepted. OCR extraction and marker normalization are running in the background."
         };
@@ -116,7 +154,9 @@ public class BloodAnalyticsService
             ContentType = file.ContentType
         }, cancellationToken);
 
-        return id;
+        return new BloodTestUploadCreationResult(
+            id,
+            possibleDuplicateId);
     }
 
     public async Task ProcessBloodTestAsync(Guid bloodTestId, string userId, byte[] fileBytes, string fileName, string contentType, CancellationToken cancellationToken)
@@ -133,24 +173,44 @@ public class BloodAnalyticsService
 
         var profile = _context.HealthProfiles.IgnoreQueryFilters().FirstOrDefault(item => item.UserId == userId);
         var allDefinitions = _context.HealthMetricDefinitions.IgnoreQueryFilters().Include(item => item.ReferenceRanges).ToList();
-
-        var selectedMarkers = SelectMarkers(extraction.Markers, normalization);
-        var curatedMarkers = CurateMarkerCandidates(selectedMarkers);
-        var extractedMarkers = curatedMarkers
-            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.OriginalName ?? marker.Name, marker.Unit, marker.Value, marker.ValueText, marker.Confidence, marker.ReferenceMinValue, marker.ReferenceMaxValue))
-            .ToList();
-
         var bloodTest = _context.BloodTests
             .IgnoreQueryFilters()
-            .FirstOrDefault(test => test.Id == bloodTestId && test.UserId == userId);
+            .FirstOrDefault(test =>
+                test.Id == bloodTestId
+                && test.UserId == userId);
 
         if (bloodTest is null)
         {
             return;
         }
 
+        var selectedMarkers = SelectMarkers(extraction.Markers, normalization);
+        var curatedMarkers = CurateMarkerCandidates(selectedMarkers);
+        var extractedMarkers = curatedMarkers
+            .Select(marker => BuildMarkerResult(
+                profile,
+                allDefinitions,
+                bloodTest.TestDate,
+                marker.Name,
+                marker.OriginalName ?? marker.Name,
+                marker.Unit,
+                marker.Value,
+                marker.ValueText,
+                marker.Confidence,
+                marker.ReferenceMinValue,
+                marker.ReferenceMaxValue,
+                requireConfidenceReview: true))
+            .ToList();
+
         bloodTest.RawExtractionPayload = BuildCombinedExtractionPayload(extraction, normalization);
-        bloodTest.ProcessingNotes = BuildProcessingNotes(extraction.ErrorMessage, normalization, null, extraction.Markers.Count, extractedMarkers.Count, selectedMarkers.Count - curatedMarkers.Count);
+        bloodTest.ProcessingNotes = BuildProcessingNotes(
+            extraction.ErrorMessage,
+            normalization,
+            !string.IsNullOrWhiteSpace(
+                bloodTest.SourceBlobName),
+            extractedMarkers.Count,
+            selectedMarkers.Count
+            - curatedMarkers.Count);
         bloodTest.ProcessingStatus = BloodTestProcessingStatus.PendingReview;
         bloodTest.UpdatedAtUtc = DateTime.UtcNow;
         bloodTest.MarkerResults = extractedMarkers;
@@ -203,12 +263,56 @@ public class BloodAnalyticsService
         bloodTest.LabName = review.LabName;
         bloodTest.UpdatedAtUtc = DateTime.UtcNow;
         bloodTest.ProcessingStatus = review.Markers.Count == 0 ? BloodTestProcessingStatus.PendingReview : BloodTestProcessingStatus.Processed;
-        bloodTest.ProcessingNotes = BuildReviewProcessingNotes(bloodTest.ProcessingNotes, review.Markers.Count);
+        bloodTest.ProcessingNotes =
+            BuildReviewProcessingNotes(
+                review.Markers.Count);
 
-        _context.BloodTestMarkerResults.RemoveRange(bloodTest.MarkerResults);
-        bloodTest.MarkerResults = review.Markers
-            .Select(marker => BuildMarkerResult(profile, allDefinitions, marker.Name, marker.Name, marker.Unit, marker.Value, marker.RawValueText, marker.Confidence))
+        var existingById = bloodTest.MarkerResults
+            .ToDictionary(marker => marker.Id);
+        var retainedIds = review.Markers
+            .Where(marker => marker.Id.HasValue)
+            .Select(marker => marker.Id!.Value)
+            .ToHashSet();
+        var removedMarkers = bloodTest.MarkerResults
+            .Where(marker => !retainedIds.Contains(marker.Id))
             .ToList();
+        _context.BloodTestMarkerResults.RemoveRange(
+            removedMarkers);
+
+        foreach (var marker in review.Markers)
+        {
+            var existing =
+                marker.Id.HasValue
+                && existingById.TryGetValue(
+                    marker.Id.Value,
+                    out var matched)
+                    ? matched
+                    : null;
+            var computed = BuildMarkerResult(
+                profile,
+                allDefinitions,
+                bloodTest.TestDate,
+                marker.Name,
+                existing?.RawMarkerName ?? marker.Name,
+                marker.Unit,
+                marker.Value,
+                existing?.RawValueText
+                    ?? marker.RawValueText,
+                existing?.Confidence
+                    ?? marker.Confidence,
+                marker.ReferenceMinValue,
+                marker.ReferenceMaxValue,
+                marker.ReferenceRangeFromReport,
+                requireConfidenceReview: false);
+
+            if (existing is null)
+            {
+                bloodTest.MarkerResults.Add(computed);
+                continue;
+            }
+
+            ApplyReviewedMarker(existing, computed);
+        }
 
         _context.SaveChanges();
         return true;
@@ -556,59 +660,59 @@ public class BloodAnalyticsService
         });
     }
 
-    private static string? BuildProcessingNotes(string? extractionError, MarkerNormalizationResult normalization, StoredBloodTestDocument? storedDocument, int ocrMarkerCount, int savedMarkerCount, int filteredMarkerCount)
+    private static string? BuildProcessingNotes(
+        string? extractionError,
+        MarkerNormalizationResult normalization,
+        bool hasStoredDocument,
+        int savedMarkerCount,
+        int filteredMarkerCount)
     {
         var notes = new List<string>();
         if (!string.IsNullOrWhiteSpace(extractionError))
         {
-            notes.Add(extractionError);
+            notes.Add(
+                "Some report content could not be read automatically.");
         }
 
         if (normalization.Success && savedMarkerCount > 0)
         {
-            notes.Add($"{normalization.ProviderName} normalized {savedMarkerCount} marker candidates using model {normalization.Model}. Review required before finalizing.");
+            notes.Add(
+                $"{savedMarkerCount} suggested markers are ready to review.");
         }
         else if (!string.IsNullOrWhiteSpace(normalization.ErrorMessage))
         {
-            notes.Add($"LLM normalization skipped or failed. Using deterministic OCR candidates only. {normalization.ErrorMessage}");
-        }
-
-        if (ocrMarkerCount > 0)
-        {
-            notes.Add($"OCR extracted {ocrMarkerCount} raw marker candidates before review.");
+            notes.Add(
+                "Automatic normalization was unavailable; review the extracted suggestions carefully.");
         }
 
         if (filteredMarkerCount > 0)
         {
-            notes.Add($"Discarded {filteredMarkerCount} non-clinical or duplicate rows before review.");
+            notes.Add(
+                $"{filteredMarkerCount} duplicate or non-marker rows were ignored.");
         }
 
-        if (savedMarkerCount > 0)
+        if (savedMarkerCount == 0)
         {
-            notes.Add($"Saved {savedMarkerCount} marker candidates for review. Review required before finalizing.");
-        }
-        else
-        {
-            notes.Add("No reliable marker candidates were extracted. Manual review required.");
+            notes.Add(
+                "No reliable markers were found. Enter the results manually.");
         }
 
-        if (storedDocument is null)
+        if (!hasStoredDocument)
         {
-            notes.Add("Source document was not archived because no document storage provider is enabled or configured.");
+            notes.Add("The original report is not available.");
         }
 
         return notes.Count == 0 ? null : string.Join(" ", notes);
     }
 
-    private static string BuildReviewProcessingNotes(string? existingNotes, int markerCount)
+    private static string BuildReviewProcessingNotes(
+        int markerCount)
     {
         var reviewedNote = markerCount == 0
             ? "Review saved without finalized markers. Additional review is still required."
             : "Blood test markers were reviewed and finalized manually.";
 
-        return string.IsNullOrWhiteSpace(existingNotes)
-            ? reviewedNote
-            : $"{existingNotes} {reviewedNote}";
+        return reviewedNote;
     }
 
     public List<HealthTrendPoint> GetMarkerTrends(string userId, string metricKey, DateTime? fromUtc, DateTime? toUtc)
@@ -619,7 +723,6 @@ public class BloodAnalyticsService
             .Include(result => result.BloodTest)
             .Where(result => result.BloodTest.UserId == userId)
             .Where(result => result.BloodTest.ProcessingStatus == BloodTestProcessingStatus.Processed)
-            .Where(result => result.MetricKey == normalizedMetricKey)
             .Where(result => result.NormalizedValue != null)
             .AsQueryable();
 
@@ -634,9 +737,14 @@ public class BloodAnalyticsService
         }
 
         return query
+            .AsEnumerable()
+            .Where(result =>
+                NormalizeMetricKey(result.MetricKey)
+                == normalizedMetricKey)
             .OrderBy(result => result.BloodTest.TestDate)
             .Select(result => new HealthTrendPoint
             {
+                BloodTestId = result.BloodTestId,
                 Time = result.BloodTest.TestDate,
                 Value = result.NormalizedValue ?? 0,
                 Unit = result.NormalizedUnit ?? result.Unit,
@@ -653,12 +761,15 @@ public class BloodAnalyticsService
             .Where(result => result.BloodTest.UserId == userId)
             .Where(result => result.BloodTest.ProcessingStatus == BloodTestProcessingStatus.Processed)
             .AsEnumerable()
-            .GroupBy(result => result.MetricKey)
+            .GroupBy(result =>
+                NormalizeMetricKey(result.MetricKey))
             .Select(group => group.OrderByDescending(result => result.BloodTest.TestDate).First())
             .OrderBy(result => result.DisplayName)
             .Select(result => new LatestMarkerSnapshot
             {
-                MetricKey = result.MetricKey,
+                BloodTestId = result.BloodTestId,
+                MetricKey = NormalizeMetricKey(
+                    result.MetricKey),
                 DisplayName = result.DisplayName,
                 Value = result.NormalizedValue ?? result.Value,
                 Unit = result.NormalizedUnit ?? result.Unit,
@@ -670,21 +781,135 @@ public class BloodAnalyticsService
             .ToList();
     }
 
-    private static BloodTestMarkerResult BuildMarkerResult(HealthProfile? profile, List<HealthMetricDefinition> allDefinitions, string displayName, string rawMarkerName, string? unit, decimal? value, string? rawValueText, double? confidence, decimal? ocrReferenceMinValue = null, decimal? ocrReferenceMaxValue = null)
+    public async Task ReclassifyMarkersForUserAsync(
+        string userId,
+        CancellationToken cancellationToken)
     {
-        var normalizedUnit = string.IsNullOrWhiteSpace(unit) ? null : unit.Trim();
-        var metricKey = NormalizeMetricKey(displayName);
-        var metricDefinition = allDefinitions.FirstOrDefault(item => item.Key == metricKey);
+        var profile = await _context.HealthProfiles
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                item => item.UserId == userId,
+                cancellationToken);
+        var definitions = await _context
+            .HealthMetricDefinitions
+            .IgnoreQueryFilters()
+            .Include(item => item.ReferenceRanges)
+            .ToListAsync(cancellationToken);
+        var markers = await _context.BloodTestMarkerResults
+            .IgnoreQueryFilters()
+            .Include(marker => marker.BloodTest)
+            .Where(marker =>
+                marker.BloodTest.UserId == userId)
+            .ToListAsync(cancellationToken);
 
-        var referenceRange = ResolveReferenceRange(metricDefinition, profile, normalizedUnit);
-        if (referenceRange is null && (ocrReferenceMinValue.HasValue || ocrReferenceMaxValue.HasValue))
+        foreach (var marker in markers)
         {
-            referenceRange = new ReferenceRange { MinValue = ocrReferenceMinValue, MaxValue = ocrReferenceMaxValue };
+            var metricKey = NormalizeMetricKey(
+                string.IsNullOrWhiteSpace(marker.DisplayName)
+                    ? marker.MetricKey
+                    : marker.DisplayName);
+            var definition = FindMetricDefinition(
+                definitions,
+                metricKey);
+            var normalized =
+                BloodMarkerValueNormalizer.Normalize(
+                    metricKey,
+                    marker.Unit,
+                    marker.Value,
+                    null,
+                    null,
+                    definition?.DefaultUnit);
+            var referenceRange = ResolveReferenceRange(
+                definition,
+                profile,
+                normalized.Unit,
+                marker.BloodTest.TestDate);
+
+            marker.MetricKey =
+                definition?.Key ?? metricKey;
+            marker.DisplayName =
+                definition?.DisplayName
+                ?? marker.DisplayName;
+            marker.NormalizedValue = normalized.Value;
+            marker.NormalizedUnit = normalized.Unit;
+
+            if (definition is not null
+                && !marker.ReferenceRangeFromReport)
+            {
+                marker.ReferenceMinValue =
+                    referenceRange?.MinValue;
+                marker.ReferenceMaxValue =
+                    referenceRange?.MaxValue;
+            }
+
+            marker.Status = ClassifyValue(
+                marker.NormalizedValue,
+                marker.ReferenceMinValue,
+                marker.ReferenceMaxValue);
+            if (marker.BloodTest.ProcessingStatus
+                    == BloodTestProcessingStatus.PendingReview
+                && marker.Confidence is < 0.8)
+            {
+                marker.Status = MarkerStatus.RequiresReview;
+            }
         }
 
-        var status = ClassifyValue(value, referenceRange);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 
-        if (confidence.HasValue && confidence.Value < 0.8 && status != MarkerStatus.RequiresReview)
+    private static BloodTestMarkerResult BuildMarkerResult(
+        HealthProfile? profile,
+        List<HealthMetricDefinition> allDefinitions,
+        DateTime testDate,
+        string displayName,
+        string rawMarkerName,
+        string? unit,
+        decimal? value,
+        string? rawValueText,
+        double? confidence,
+        decimal? ocrReferenceMinValue = null,
+        decimal? ocrReferenceMaxValue = null,
+        bool referenceRangeFromReport = false,
+        bool requireConfidenceReview = true)
+    {
+        var metricKey = NormalizeMetricKey(displayName);
+        var metricDefinition = FindMetricDefinition(
+            allDefinitions,
+            metricKey);
+        var normalized =
+            BloodMarkerValueNormalizer.Normalize(
+                metricKey,
+                unit,
+                value,
+                ocrReferenceMinValue,
+                ocrReferenceMaxValue,
+                metricDefinition?.DefaultUnit);
+
+        var hasProvidedReference =
+            normalized.ReferenceMin.HasValue
+            || normalized.ReferenceMax.HasValue;
+        var referenceRange = hasProvidedReference
+            ? new ReferenceRange
+            {
+                MinValue = normalized.ReferenceMin,
+                MaxValue = normalized.ReferenceMax,
+                Unit = normalized.Unit ?? string.Empty
+            }
+            : ResolveReferenceRange(
+                metricDefinition,
+                profile,
+                normalized.Unit,
+                testDate);
+
+        var status = ClassifyValue(
+            normalized.Value,
+            referenceRange?.MinValue,
+            referenceRange?.MaxValue);
+
+        if (requireConfidenceReview
+            && confidence.HasValue
+            && confidence.Value < 0.8
+            && status != MarkerStatus.RequiresReview)
         {
             status = MarkerStatus.RequiresReview;
         }
@@ -695,35 +920,63 @@ public class BloodAnalyticsService
             DisplayName = metricDefinition?.DisplayName ?? displayName,
             RawMarkerName = rawMarkerName,
             Unit = unit,
-            NormalizedUnit = normalizedUnit ?? metricDefinition?.DefaultUnit,
+            NormalizedUnit = normalized.Unit,
             RawValueText = rawValueText,
             Value = value,
-            NormalizedValue = value,
+            NormalizedValue = normalized.Value,
             Confidence = confidence,
             Status = status,
             ReferenceMinValue = referenceRange?.MinValue,
-            ReferenceMaxValue = referenceRange?.MaxValue
+            ReferenceMaxValue = referenceRange?.MaxValue,
+            ReferenceRangeFromReport =
+                referenceRangeFromReport
+                || hasProvidedReference
         };
     }
 
-    private static MarkerStatus ClassifyValue(decimal? value, ReferenceRange? referenceRange)
+    private static void ApplyReviewedMarker(
+        BloodTestMarkerResult target,
+        BloodTestMarkerResult source)
+    {
+        target.MetricKey = source.MetricKey;
+        target.DisplayName = source.DisplayName;
+        target.Unit = source.Unit;
+        target.NormalizedUnit = source.NormalizedUnit;
+        target.Value = source.Value;
+        target.NormalizedValue = source.NormalizedValue;
+        target.Status = source.Status;
+        target.ReferenceMinValue =
+            source.ReferenceMinValue;
+        target.ReferenceMaxValue =
+            source.ReferenceMaxValue;
+        target.ReferenceRangeFromReport =
+            source.ReferenceRangeFromReport;
+    }
+
+    private static MarkerStatus ClassifyValue(
+        decimal? value,
+        decimal? referenceMin,
+        decimal? referenceMax)
     {
         if (value is null)
         {
             return MarkerStatus.RequiresReview;
         }
 
-        if (referenceRange is null)
+        if (!referenceMin.HasValue
+            && !referenceMax.HasValue)
         {
             return MarkerStatus.Unknown;
         }
 
-        if (referenceRange.MinValue.HasValue && value.Value < referenceRange.MinValue.Value)
+        if (referenceMin.HasValue
+            && value.Value < referenceMin.Value)
         {
             return MarkerStatus.Low;
         }
 
-        if (referenceRange.MaxValue.HasValue && value.Value > referenceRange.MaxValue.Value)
+        if (referenceMax.HasValue
+            && value.Value > referenceMax.Value)
         {
             return MarkerStatus.High;
         }
@@ -731,7 +984,11 @@ public class BloodAnalyticsService
         return MarkerStatus.InRange;
     }
 
-    private static ReferenceRange? ResolveReferenceRange(HealthMetricDefinition? metricDefinition, HealthProfile? profile, string? unit)
+    private static ReferenceRange? ResolveReferenceRange(
+        HealthMetricDefinition? metricDefinition,
+        HealthProfile? profile,
+        string? unit,
+        DateTime testDate)
     {
         if (metricDefinition is null)
         {
@@ -740,10 +997,17 @@ public class BloodAnalyticsService
 
         var age = profile?.DateOfBirth is null
             ? (int?)null
-            : CalculateAge(profile.DateOfBirth.Value, DateOnly.FromDateTime(DateTime.UtcNow));
+            : CalculateAge(
+                profile.DateOfBirth.Value,
+                DateOnly.FromDateTime(testDate));
 
         return metricDefinition.ReferenceRanges
-            .Where(range => string.IsNullOrWhiteSpace(unit) || range.Unit == unit)
+            .Where(range =>
+                string.IsNullOrWhiteSpace(unit)
+                || string.Equals(
+                    NormalizeUnitKey(range.Unit),
+                    NormalizeUnitKey(unit),
+                    StringComparison.OrdinalIgnoreCase))
             .Where(range => !range.BiologicalSex.HasValue || range.BiologicalSex == profile?.BiologicalSex)
             .Where(range => !range.MinAge.HasValue || (age.HasValue && age.Value >= range.MinAge.Value))
             .Where(range => !range.MaxAge.HasValue || (age.HasValue && age.Value <= range.MaxAge.Value))
@@ -751,6 +1015,24 @@ public class BloodAnalyticsService
             .ThenBy(range => range.MinAge.HasValue ? 0 : 1)
             .FirstOrDefault();
     }
+
+    private static HealthMetricDefinition?
+        FindMetricDefinition(
+            IEnumerable<HealthMetricDefinition> definitions,
+            string metricKey)
+        => definitions.FirstOrDefault(definition =>
+            NormalizeMetricKey(definition.Key)
+                == metricKey
+            || NormalizeMetricKey(definition.DisplayName)
+                == metricKey);
+
+    private static string NormalizeUnitKey(string? unit)
+        => (unit ?? string.Empty)
+            .Trim()
+            .Replace("μ", "u", StringComparison.Ordinal)
+            .Replace("µ", "u", StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
 
     private static int CalculateAge(DateOnly dateOfBirth, DateOnly asOf)
     {
@@ -764,16 +1046,7 @@ public class BloodAnalyticsService
     }
 
     public static string NormalizeMetricKey(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var normalized = value.Trim().ToLowerInvariant();
-        normalized = Regex.Replace(normalized, "[^a-z0-9]+", "-");
-        return normalized.Trim('-');
-    }
+        => BloodMarkerValueNormalizer.NormalizeMetricKey(value);
 }
 
 public class ManualBloodTestMarkerInput
@@ -781,6 +1054,8 @@ public class ManualBloodTestMarkerInput
     public string Name { get; set; } = string.Empty;
     public decimal? Value { get; set; }
     public string? Unit { get; set; }
+    public decimal? ReferenceMinValue { get; set; }
+    public decimal? ReferenceMaxValue { get; set; }
 }
 
 public class ReviewBloodTestInput
@@ -792,15 +1067,24 @@ public class ReviewBloodTestInput
 
 public class ReviewBloodTestMarkerInput
 {
+    public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal? Value { get; set; }
     public string? Unit { get; set; }
     public string? RawValueText { get; set; }
     public double? Confidence { get; set; }
+    public decimal? ReferenceMinValue { get; set; }
+    public decimal? ReferenceMaxValue { get; set; }
+    public bool ReferenceRangeFromReport { get; set; }
 }
+
+public sealed record BloodTestUploadCreationResult(
+    Guid Id,
+    Guid? PossibleDuplicateBloodTestId);
 
 public class HealthTrendPoint
 {
+    public Guid BloodTestId { get; set; }
     public DateTime Time { get; set; }
     public decimal Value { get; set; }
     public string? Unit { get; set; }
@@ -809,6 +1093,7 @@ public class HealthTrendPoint
 
 public class LatestMarkerSnapshot
 {
+    public Guid BloodTestId { get; set; }
     public string MetricKey { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public decimal? Value { get; set; }

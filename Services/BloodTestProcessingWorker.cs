@@ -40,7 +40,10 @@ public class BloodTestProcessingWorker : BackgroundService
                 {
                     await using var scope = _scopeFactory.CreateAsyncScope();
                     var service = scope.ServiceProvider.GetRequiredService<BloodAnalyticsService>();
-                    service.MarkBloodTestFailed(job.BloodTestId, job.UserId, $"Background processing failed: {ex.Message}");
+                    service.MarkBloodTestFailed(
+                        job.BloodTestId,
+                        job.UserId,
+                        "The report could not be read. Enter results manually or upload it again.");
                 }
                 catch (Exception innerEx)
                 {

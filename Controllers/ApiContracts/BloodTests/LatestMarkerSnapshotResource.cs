@@ -2,6 +2,7 @@
 
 public class LatestMarkerSnapshotResource
 {
+    public Guid BloodTestId { get; set; }
     public string MetricKey { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public decimal? Value { get; set; }
