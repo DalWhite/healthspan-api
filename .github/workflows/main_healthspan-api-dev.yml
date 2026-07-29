@@ -43,6 +43,11 @@ jobs:
           DbConnectionString: ${{ secrets.DBCONNECTIONSTRING }}
           GoogleClientId: ${{ secrets.GOOGLECLIENTID }}
           GoogleClientSecret: ${{ secrets.GOOGLECLIENTSECRET }}
+          AzureDocumentIntelligenceEnabled: 'true'
+          AzureDocumentIntelligenceApiKey: ${{ secrets.AZUREDOCUMENTINTELLIGENCEAPIKEY }}
+          LlmMarkerNormalizationEnabled: 'true'
+          LlmMarkerNormalizationApiKey: ${{ secrets.OPENROUTERAPIKEY }}
+          LlmMarkerNormalizationModel: 'openrouter/free'
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
