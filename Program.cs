@@ -37,9 +37,11 @@ var authenticationBuilder = builder.Services.AddAuthentication(options =>
 });
 
 authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
-authenticationBuilder.AddGoogle(options =>
+if (!string.IsNullOrWhiteSpace(googleSettings.ClientId))
 {
-    options.ClientId = googleSettings.ClientId;
+    authenticationBuilder.AddGoogle(options =>
+    {
+        options.ClientId = googleSettings.ClientId;
     options.ClientSecret = googleSettings.ClientSecret;
 
     var callbackUri = googleSettings.CallbackUri;
@@ -86,6 +88,7 @@ authenticationBuilder.AddGoogle(options =>
         return Task.CompletedTask;
     };
 });
+}
 builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddEndpointsApiExplorer();
