@@ -42,6 +42,20 @@ public class ExerciseTypesRepository
         return QueryWithRelations()
             .ToList();
     }
+
+    /// <summary>
+    /// Ids of exercise types (including variations) that the given user has
+    /// logged in at least one workout.
+    /// </summary>
+    public HashSet<int> GetTrainedExerciseTypeIds(string userId)
+    {
+        return _context.Exercises
+            .IgnoreQueryFilters()
+            .Where(exercise => exercise.Workout.UserId == userId && exercise.TypeId != null)
+            .Select(exercise => exercise.TypeId!.Value)
+            .Distinct()
+            .ToHashSet();
+    }
     
     /// <summary>
     /// Gets exercise types filtered by equipment tag
