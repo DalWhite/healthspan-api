@@ -71,6 +71,98 @@ public class WorkoutsTests : ApiTestBase
     }
 
     [Fact]
+    public async Task DuplicateWorkout_Copies_Whole_Day_To_Another_Date()
+    {
+        var targetDate = new DateOnly(2097, 6, 15);
+
+        var response = await Client.PostAsJsonAsync(
+            $"/workouts/{TestDataSeeder.WorkoutId1}/duplicate",
+            new DuplicateWorkoutResource { Date = targetDate });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = await response.Content
+            .ReadFromJsonAsync<DuplicatedWorkoutResource>();
+        result.Should().NotBeNull();
+        result!.SourceWorkoutId.Should().Be(TestDataSeeder.WorkoutId1);
+        result.Workout.Id.Should().NotBe(TestDataSeeder.WorkoutId1);
+        result.Workout.Date.Date.Should().Be(targetDate.ToDateTime(TimeOnly.MinValue));
+        result.Workout.Type.Should().Be("Push");
+        result.Workout.ExerciseCount.Should().Be(1);
+        result.Workout.Exercises.Should().HaveCount(1);
+        var copy = result.Workout.Exercises.Single();
+        copy.TypeId.Should().Be(TestDataSeeder.BenchPressTypeId);
+        copy.Series.Should().Be(4);
+        copy.Repetitions.Should().Be(8);
+        copy.Weight.Should().Be(80);
+        copy.Id.Should().NotBe(TestDataSeeder.ExerciseId1);
+
+        // The source workout is untouched.
+        var sourceResponse = await Client.GetAsync(
+            $"/workouts/{TestDataSeeder.WorkoutId1}");
+        var source = await sourceResponse.Content
+            .ReadFromJsonAsync<GetWorkoutResource>();
+        source!.ExerciseCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DuplicateWorkout_Copies_Selected_Exercises_Only()
+    {
+        var targetDate = new DateOnly(2097, 6, 20);
+
+        var response = await Client.PostAsJsonAsync(
+            $"/workouts/{TestDataSeeder.WorkoutId1}/duplicate",
+            new DuplicateWorkoutResource
+            {
+                Date = targetDate,
+                Type = "Push (partial)",
+                ExerciseIds = [TestDataSeeder.ExerciseId1]
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = await response.Content
+            .ReadFromJsonAsync<DuplicatedWorkoutResource>();
+        result!.Workout.Type.Should().Be("Push (partial)");
+        result.Workout.ExerciseCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DuplicateWorkout_Rejects_Unknown_Workout_And_Missing_Date()
+    {
+        var notFound = await Client.PostAsJsonAsync(
+            $"/workouts/{Guid.NewGuid()}/duplicate",
+            new DuplicateWorkoutResource { Date = new DateOnly(2097, 7, 1) });
+        notFound.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var invalid = await Client.PostAsJsonAsync(
+            $"/workouts/{TestDataSeeder.WorkoutId1}/duplicate",
+            new DuplicateWorkoutResource { Date = default });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task DuplicateWorkout_TargetUser_Must_Be_Self_Or_Assigned_Trainee()
+    {
+        var unrelatedUserId = $"unrelated-dup-{Guid.NewGuid():N}";
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = unrelatedUserId,
+                UserName = $"{unrelatedUserId}@healthspan.dev",
+                Email = $"{unrelatedUserId}@healthspan.dev"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.PostAsJsonAsync(
+            $"/workouts/{TestDataSeeder.WorkoutId1}/duplicate?traineeId={unrelatedUserId}",
+            new DuplicateWorkoutResource { Date = new DateOnly(2097, 8, 1) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task Assigned_Trainer_Can_Prepare_Trainee_Workout()
     {
         var traineeId = $"assigned-trainee-{Guid.NewGuid():N}";
