@@ -387,6 +387,106 @@ public class WorkoutsRepository
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+    public async Task<Workout?> DuplicateWorkoutSessionAsync(
+        Guid sourceWorkoutId,
+        string userId,
+        DateOnly targetDate,
+        string? type,
+        IReadOnlyCollection<Guid>? exerciseIds,
+        CancellationToken cancellationToken = default)
+    {
+        var source = await SessionQuery(userId)
+            .FirstOrDefaultAsync(
+                workout => workout.Id == sourceWorkoutId,
+                cancellationToken);
+        if (source is null)
+        {
+            return null;
+        }
+
+        var selectedExercises = (source.Exercises ?? [])
+            .Where(exercise =>
+                exerciseIds is null
+                || exerciseIds.Count == 0
+                || exerciseIds.Contains(exercise.Id))
+            .ToList();
+
+        var targetWorkoutId = Guid.NewGuid();
+        var target = new Workout
+        {
+            Id = targetWorkoutId,
+            Date = targetDate.ToDateTime(TimeOnly.MinValue),
+            Type = string.IsNullOrWhiteSpace(type) ? source.Type : type.Trim(),
+            UserId = userId,
+            DailySessionKey = WorkoutDailySessionKey.CreateForSession(
+                userId,
+                targetDate,
+                targetWorkoutId),
+            Exercises = []
+        };
+
+        foreach (var sourceExercise in selectedExercises)
+        {
+            target.Exercises.Add(new Exercise
+            {
+                Id = Guid.NewGuid(),
+                WorkoutId = targetWorkoutId,
+                TypeId = sourceExercise.TypeId,
+                Series = sourceExercise.Series,
+                Repetitions = sourceExercise.Repetitions,
+                Weight = sourceExercise.Weight,
+                BodyWeight = sourceExercise.BodyWeight,
+                AddedWeight = sourceExercise.AddedWeight,
+                MaxRepetition = sourceExercise.MaxRepetition,
+                Comments = sourceExercise.Comments,
+                Tags = ExerciseTagNormalizer.Normalize(sourceExercise.Tags)
+            });
+        }
+
+        _context.Workouts.Add(target);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The target date already owns the daily session key. If that
+            // workout is empty it is a placeholder and the duplicate replaces
+            // it; otherwise the duplicate simply lives as an extra session.
+            _context.ChangeTracker.Clear();
+
+            var conflicting = await _context.Workouts
+                .IgnoreQueryFilters()
+                .Where(workout => workout.UserId == userId)
+                .Include(workout => workout.Exercises)
+                .FirstOrDefaultAsync(
+                    workout =>
+                        workout.Date >= targetDate.ToDateTime(TimeOnly.MinValue)
+                        && workout.Date < targetDate.ToDateTime(TimeOnly.MinValue).AddDays(1),
+                    cancellationToken);
+
+            if (conflicting is not null && conflicting.Exercises.Count == 0)
+            {
+                _context.Workouts.Remove(conflicting);
+                await _context.SaveChangesAsync(cancellationToken);
+                _context.ChangeTracker.Clear();
+            }
+
+            target.DailySessionKey = WorkoutDailySessionKey.CreateForSession(
+                userId,
+                targetDate,
+                targetWorkoutId);
+            _context.Workouts.Add(target);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        return await GetWorkoutHistoryDetailsAsync(
+            target.Id,
+            userId,
+            cancellationToken);
+    }
+
     private IQueryable<Workout> SessionQuery(string userId, bool asNoTracking = true)
     {
         var query = _context.Workouts

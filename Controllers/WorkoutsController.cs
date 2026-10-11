@@ -383,6 +383,63 @@ public class WorkoutsController : ControllerBase
         }
     }
 
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<DuplicatedWorkoutResource>> DuplicateWorkout(
+        Guid id,
+        DuplicateWorkoutResource resource,
+        string traineeId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
+            }
+
+            var duplicated = await _workoutsRepository
+                .DuplicateWorkoutSessionAsync(
+                    id,
+                    userId,
+                    resource.Date,
+                    resource.Type,
+                    resource.ExerciseIds,
+                    cancellationToken);
+            if (duplicated is null)
+            {
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            var response = new DuplicatedWorkoutResource
+            {
+                SourceWorkoutId = id,
+                Workout = MapWorkoutHistory(duplicated, includeExercises: true)
+            };
+
+            return CreatedAtAction(
+                nameof(GetWorkout),
+                new { id = duplicated.Id },
+                response);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to duplicate the workout.", ex);
+        }
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<GetWorkoutResource>> GetWorkout(
         Guid id,
