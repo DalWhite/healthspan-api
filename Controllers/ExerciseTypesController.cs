@@ -69,6 +69,54 @@ public class ExerciseTypesController : ControllerBase
         }
     }
 
+    [HttpGet("trained")]
+    public ActionResult<List<GetExerciseTypeResource>> GetTrainedExerciseTypes(string userId = "")
+    {
+        try
+        {
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var resolvedUserId = string.IsNullOrWhiteSpace(userId)
+                ? requesterUserId
+                : userId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    resolvedUserId))
+            {
+                return Forbid();
+            }
+
+            var trainedTypeIds = _exerciseTypeRepository.GetTrainedExerciseTypeIds(resolvedUserId);
+            var allExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
+
+            // A family (main type + its variations) counts as trained when the user
+            // has logged at least one exercise of any of its members.
+            var trainedRootIds = new HashSet<int>();
+            foreach (var exerciseType in allExerciseTypes)
+            {
+                if (trainedTypeIds.Contains(exerciseType.Id))
+                {
+                    trainedRootIds.Add(exerciseType.ParentExerciseTypeId ?? exerciseType.Id);
+                }
+            }
+
+            var response = allExerciseTypes
+                .Where(exerciseType => trainedRootIds.Contains(exerciseType.ParentExerciseTypeId ?? exerciseType.Id))
+                .Select(exerciseType => MapExerciseType(exerciseType, resolvedUserId, includeVariations: true))
+                .ToList();
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to load trained exercise types.", ex);
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> AddExerciseType(AddExerciseTypeResource exerciseTypeResource)
     {

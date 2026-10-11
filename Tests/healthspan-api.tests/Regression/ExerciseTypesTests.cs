@@ -64,6 +64,78 @@ public class ExerciseTypesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task GetTrainedExerciseTypes_Returns_OnlyTypesWithAtLeastOneWorkoutExercise()
+    {
+        var response = await Client.GetAsync("/exercisetypes/trained");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var types = await response.Content.ReadFromJsonAsync<List<GetExerciseTypeResource>>();
+        types.Should().NotBeNull();
+
+        var ids = types!.Select(type => type.Id).ToList();
+        ids.Should().Contain(TestDataSeeder.BenchPressTypeId);
+        ids.Should().Contain(TestDataSeeder.DeadliftTypeId);
+        ids.Should().NotContain(TestDataSeeder.SquatTypeId);
+    }
+
+    [Fact]
+    public async Task GetTrainedExerciseTypes_Includes_Family_When_Only_Variation_Is_Trained()
+    {
+        int variationTypeId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var variation = new ExerciseType
+            {
+                Name = "Incline Bench Press",
+                Description = "Incline variation",
+                WeightType = "Standard",
+                ParentExerciseTypeId = TestDataSeeder.BenchPressTypeId,
+                Tags = new(),
+                MuscleAssignments = new()
+                {
+                    new() { MuscleId = TestDataSeeder.ChestMuscleId, Role = ExerciseMuscleRole.Primary, SortOrder = 1 }
+                }
+            };
+            db.ExerciseTypes.Add(variation);
+
+            var exercise = new Exercise
+            {
+                Id = Guid.NewGuid(),
+                TypeId = 0,
+                Series = 3,
+                Repetitions = 10,
+                Weight = 40,
+                WorkoutId = TestDataSeeder.WorkoutId1
+            };
+            db.Exercises.Add(exercise);
+            await db.SaveChangesAsync();
+
+            exercise.TypeId = variation.Id;
+            await db.SaveChangesAsync();
+            variationTypeId = variation.Id;
+        }
+
+        var response = await Client.GetAsync("/exercisetypes/trained");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var types = await response.Content.ReadFromJsonAsync<List<GetExerciseTypeResource>>();
+        types.Should().NotBeNull();
+
+        var benchPress = types!.Single(type => type.Id == TestDataSeeder.BenchPressTypeId);
+        benchPress.Variations.Should().Contain(variation => variation.Id == variationTypeId);
+    }
+
+    [Fact]
+    public async Task GetTrainedExerciseTypes_Rejects_Unrelated_User()
+    {
+        var response = await Client.GetAsync(
+            $"/exercisetypes/trained?userId=unrelated-{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task GetExerciseType_ById_Returns_Correct()
     {
         var response = await Client.GetAsync($"/exercisetypes/{TestDataSeeder.BenchPressTypeId}");
