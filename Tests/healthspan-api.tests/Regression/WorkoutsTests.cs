@@ -853,6 +853,65 @@ public class WorkoutsTests : ApiTestBase
     }
 
     [Fact]
+    public async Task AddExerciseToWorkout_Accepts_An_Exercise_Without_Series()
+    {
+        var startResponse = await Client.PostAsJsonAsync(
+            "/workouts/today",
+            new StartWorkoutSessionResource
+            {
+                Date = new DateOnly(2035, 2, 11),
+                Type = "Training"
+            });
+        var session = await startResponse.Content.ReadFromJsonAsync<WorkoutSessionResource>();
+
+        // Logging first, detail later: an entry saved without numbers must land
+        // as null, not as a fake 1 x 8 default.
+        var response = await Client.PostAsJsonAsync(
+            $"/workouts/{session!.Id}/exercises",
+            new AddWorkoutSessionExerciseResource
+            {
+                TypeId = TestDataSeeder.SquatTypeId,
+                Series = null,
+                Repetitions = null,
+                Weight = 0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updatedSession = await response.Content.ReadFromJsonAsync<WorkoutSessionResource>();
+        updatedSession.Should().NotBeNull();
+        updatedSession!.Exercises.Should().ContainSingle();
+        updatedSession.Exercises[0].Series.Should().BeNull();
+        updatedSession.Exercises[0].Repetitions.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AddExerciseToWorkout_Rejects_An_Out_Of_Range_Series()
+    {
+        var startResponse = await Client.PostAsJsonAsync(
+            "/workouts/today",
+            new StartWorkoutSessionResource
+            {
+                Date = new DateOnly(2035, 2, 12),
+                Type = "Training"
+            });
+        var session = await startResponse.Content.ReadFromJsonAsync<WorkoutSessionResource>();
+
+        // Optional is not the same as unvalidated: a value the user did type
+        // still has to be a real number of sets.
+        var response = await Client.PostAsJsonAsync(
+            $"/workouts/{session!.Id}/exercises",
+            new AddWorkoutSessionExerciseResource
+            {
+                TypeId = TestDataSeeder.SquatTypeId,
+                Series = 0,
+                Repetitions = 10,
+                Weight = 0
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task AddExerciseToWorkout_Does_Not_Expose_Another_Users_Workout()
     {
         var otherUserId = "other-workout-user";
