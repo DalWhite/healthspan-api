@@ -278,4 +278,63 @@ public class ExerciseTypesTests : ApiTestBase
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task GetExerciseType_WhenMissing_ReturnsTaskLanguageNotFound()
+    {
+        var response = await Client.GetAsync("/exercisetypes/2147483647");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Be("Couldn't find that exercise.");
+    }
+
+    [Fact]
+    public async Task UpdateExerciseType_WhenMissing_ReturnsTaskLanguageNotFound()
+    {
+        var response = await Client.PutAsJsonAsync("/exercisetypes", new UpdateExerciseTypeResource
+        {
+            Id = 2147483647,
+            Name = "Missing Exercise Update",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Be("Couldn't find that exercise.");
+    }
+
+    [Fact]
+    public async Task DeleteExerciseType_WhenHasVariations_ReturnsTaskLanguageConflict()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var parentResponse = await Client.PostAsJsonAsync("/exercisetypes", new AddExerciseTypeResource
+        {
+            Name = $"Copy Sweep Parent {suffix}",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+        parentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var parent = await parentResponse.Content.ReadFromJsonAsync<GetExerciseTypeResource>();
+
+        var variationResponse = await Client.PostAsJsonAsync("/exercisetypes", new AddExerciseTypeResource
+        {
+            Name = $"Copy Sweep Variation {suffix}",
+            WeightType = "Standard",
+            ParentExerciseTypeId = parent!.Id,
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+        variationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var deleteResponse = await Client.DeleteAsync($"/exercisetypes/{parent!.Id}");
+
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var problem = await deleteResponse.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Be("This exercise has variations you train");
+        problem.GetProperty("detail").GetString().Should().NotContain("exercise type");
+    }
 }
