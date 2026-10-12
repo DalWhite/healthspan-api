@@ -409,4 +409,140 @@ public class ExerciseTypesTests : ApiTestBase
         problem.GetProperty("title").GetString().Should().Be("This exercise has variations you train");
         problem.GetProperty("detail").GetString().Should().NotContain("exercise type");
     }
+
+    [Fact]
+    public async Task AddExerciseType_Rejects_MissingName()
+    {
+        var newType = new AddExerciseTypeResource
+        {
+            Name = "   ",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        };
+
+        var response = await Client.PostAsJsonAsync("/exercisetypes", newType);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var message = problem.TryGetProperty("errors", out var errors)
+            ? errors.EnumerateObject().SelectMany(property => property.Value.EnumerateArray()).Select(value => value.GetString()).FirstOrDefault()
+                ?? problem.GetProperty("title").GetString()
+            : problem.GetProperty("title").GetString();
+        message.Should().Contain("name is required");
+    }
+
+    [Fact]
+    public async Task AddExerciseType_Rejects_DuplicateName()
+    {
+        var newType = new AddExerciseTypeResource
+        {
+            Name = "bench press",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        };
+
+        var response = await Client.PostAsJsonAsync("/exercisetypes", newType);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType
+            .Should().Be("application/problem+json");
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Contain("already exists");
+    }
+
+    [Fact]
+    public async Task AddExerciseType_Rejects_InvalidWeightType()
+    {
+        var newType = new AddExerciseTypeResource
+        {
+            Name = $"Invalid Weight Type {Guid.NewGuid():N}",
+            WeightType = "Explosive",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        };
+
+        var response = await Client.PostAsJsonAsync("/exercisetypes", newType);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Contain("Weight type");
+    }
+
+    [Fact]
+    public async Task AddExerciseType_Rejects_NonexistentParent()
+    {
+        var newType = new AddExerciseTypeResource
+        {
+            Name = $"Orphan Variation {Guid.NewGuid():N}",
+            WeightType = "Standard",
+            ParentExerciseTypeId = 2147483647,
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        };
+
+        var response = await Client.PostAsJsonAsync("/exercisetypes", newType);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Contain("parent exercise doesn't exist");
+    }
+
+    [Fact]
+    public async Task AddExerciseType_Rejects_VariationOfAVariation()
+    {
+        var parentResponse = await Client.PostAsJsonAsync("/exercisetypes", new AddExerciseTypeResource
+        {
+            Name = $"Main For Nested {Guid.NewGuid():N}",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+        parentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var parent = await parentResponse.Content.ReadFromJsonAsync<GetExerciseTypeResource>();
+
+        var variationResponse = await Client.PostAsJsonAsync("/exercisetypes", new AddExerciseTypeResource
+        {
+            Name = $"First Variation {Guid.NewGuid():N}",
+            WeightType = "Standard",
+            ParentExerciseTypeId = parent!.Id,
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+        variationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var variation = await variationResponse.Content.ReadFromJsonAsync<GetExerciseTypeResource>();
+
+        var nestedResponse = await Client.PostAsJsonAsync("/exercisetypes", new AddExerciseTypeResource
+        {
+            Name = $"Nested Variation {Guid.NewGuid():N}",
+            WeightType = "Standard",
+            ParentExerciseTypeId = variation!.Id,
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.ChestMuscleId, "Primary", 1))
+        });
+
+        nestedResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await nestedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Contain("main exercise");
+    }
+
+    [Fact]
+    public async Task UpdateExerciseType_Rejects_DuplicateName()
+    {
+        var update = new UpdateExerciseTypeResource
+        {
+            Id = TestDataSeeder.SquatTypeId,
+            Name = "Bench Press",
+            WeightType = "Standard",
+            MuscleAssignments = TestDataSeeder.BuildAssignments(
+                (TestDataSeeder.QuadsMuscleId, "Primary", 1))
+        };
+
+        var response = await Client.PutAsJsonAsync("/exercisetypes", update);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("title").GetString().Should().Contain("already exists");
+    }
 }

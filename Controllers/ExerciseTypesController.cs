@@ -128,6 +128,12 @@ public class ExerciseTypesController : ControllerBase
                 return validationResult;
             }
 
+            validationResult = await ValidateExerciseTypeFieldsAsync(exerciseTypeResource, exerciseTypeResource.ParentExerciseTypeId, excludeId: null);
+            if (validationResult is not null)
+            {
+                return validationResult;
+            }
+
             var domainExerciseType = MapDomainExerciseType(exerciseTypeResource);
             var exerciseTypeId = _exerciseTypeRepository.AddExerciseType(domainExerciseType);
             return CreatedAtAction(nameof(GetExerciseType), new { id = exerciseTypeId }, MapExerciseType(domainExerciseType, null, includeVariations: false));
@@ -176,6 +182,12 @@ public class ExerciseTypesController : ControllerBase
                 return Problem(
                     title: "Couldn't find that exercise.",
                     statusCode: StatusCodes.Status404NotFound);
+            }
+
+            validationResult = await ValidateExerciseTypeFieldsAsync(exerciseTypeResource, exerciseTypeResource.ParentExerciseTypeId, excludeId: exerciseTypeResource.Id);
+            if (validationResult is not null)
+            {
+                return validationResult;
             }
 
             var domainExerciseType = MapDomainExerciseType(exerciseTypeResource);
@@ -266,6 +278,57 @@ public class ExerciseTypesController : ControllerBase
             return Unexpected($"Failed to delete exercise type {id}.", ex);
         }
     }
+
+    private async Task<ActionResult> ValidateExerciseTypeFieldsAsync(BaseExerciseTypeResource resource, int? parentExerciseTypeId, int? excludeId)
+    {
+        var name = resource.Name?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return ValidationProblem(
+                "Exercise name is required.");
+        }
+
+        if (await _exerciseTypeRepository.NameExistsAsync(name, excludeId))
+        {
+            return ValidationProblem(
+                $"An exercise named '{name}' already exists.");
+        }
+
+        if (!IsValidWeightType(resource.WeightType))
+        {
+            return ValidationProblem(
+                "Weight type must be Standard, BodyWeight or None.");
+        }
+
+        if (parentExerciseTypeId is int parentId)
+        {
+            if (excludeId == parentId)
+            {
+                return ValidationProblem(
+                    "An exercise can't be a variation of itself.");
+            }
+
+            var parentExerciseType = await _exerciseTypeRepository.GetExerciseTypeAsync(parentId);
+            if (parentExerciseType is null)
+            {
+                return ValidationProblem(
+                    "The selected parent exercise doesn't exist.");
+            }
+
+            if (parentExerciseType.ParentExerciseTypeId is not null)
+            {
+                return ValidationProblem(
+                    "Variations can only belong to a main exercise.");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsValidWeightType(string weightType)
+        => string.Equals(weightType, "Standard", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(weightType, "BodyWeight", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(weightType, "None", StringComparison.OrdinalIgnoreCase);
 
     private async Task<ActionResult> ValidateMuscleAssignmentsAsync(IEnumerable<ExerciseTypeMuscleAssignmentResource> assignments)
     {
