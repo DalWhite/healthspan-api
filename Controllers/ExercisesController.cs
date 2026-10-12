@@ -323,8 +323,8 @@ public class ExercisesController : ControllerBase
                     detail: "Reload the exercise and try again.",
                     statusCode: StatusCodes.Status409Conflict),
                 ExerciseUpdateStatus.ExerciseTypeNotFound => Problem(
-                    title: "The selected exercise type is unavailable.",
-                    detail: "Choose another exercise type and try again.",
+                    title: "The selected exercise is unavailable.",
+                    detail: "Choose another exercise and try again.",
                     statusCode: StatusCodes.Status409Conflict),
                 _ => Problem(
                     title: "The exercise could not be updated.",
@@ -363,7 +363,7 @@ public class ExercisesController : ControllerBase
             }
 
             return Problem(
-                title: "Exercise type not found.",
+                title: "Couldn't find that exercise.",
                 statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)
@@ -401,7 +401,7 @@ public class ExercisesController : ControllerBase
             }
 
             return Problem(
-                title: "Exercise type not found.",
+                title: "Couldn't find that exercise.",
                 statusCode: StatusCodes.Status404NotFound);
         }
         catch (Exception ex)

@@ -344,7 +344,7 @@ public class WorkoutsController : ControllerBase
             if (exerciseType is null)
             {
                 return Problem(
-                    title: "Exercise type not found.",
+                    title: "Couldn't find that exercise.",
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
