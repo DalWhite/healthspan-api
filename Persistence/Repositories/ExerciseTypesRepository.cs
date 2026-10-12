@@ -188,6 +188,20 @@ public class ExerciseTypesRepository
             .FirstOrDefaultAsync();
     }
     
+    public async Task<bool> NameExistsAsync(string name, int? excludeId = null)
+    {
+        var normalizedName = name.Trim().ToLower();
+        return await _context.ExerciseTypes
+            .AnyAsync(et => et.Name.ToLower() == normalizedName
+                && (excludeId == null || et.Id != excludeId.Value));
+    }
+
+    public async Task<ExerciseType> GetExerciseTypeAsync(int id)
+    {
+        return await QueryWithRelations()
+            .FirstOrDefaultAsync(et => et.Id == id);
+    }
+
     public void UpdateExerciseType(ExerciseType exerciseType)
     {
         var existingEntity = GetExerciseType(exerciseType.Id);
