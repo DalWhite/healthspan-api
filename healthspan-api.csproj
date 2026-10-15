@@ -30,4 +30,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="healthspan-api.tests" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="SeedData\\exercise-variant-families.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
