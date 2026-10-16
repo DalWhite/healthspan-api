@@ -2,6 +2,7 @@ using System.Text.Json;
 using Controllers.ApiContracts.ExerciseTypes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -11,17 +12,20 @@ public class ExerciseSeedController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ExerciseTypesRepository _exerciseTypeRepository;
     private readonly MuscleRepository _muscleRepository;
+    private readonly MainDbContext _context;
     private readonly ILogger<ExerciseSeedController> _logger;
 
     public ExerciseSeedController(
         IHttpClientFactory httpClientFactory,
         ExerciseTypesRepository exerciseTypeRepository,
         MuscleRepository muscleRepository,
+        MainDbContext context,
         ILogger<ExerciseSeedController> logger)
     {
         _httpClientFactory = httpClientFactory;
         _exerciseTypeRepository = exerciseTypeRepository;
         _muscleRepository = muscleRepository;
+        _context = context;
         _logger = logger;
     }
 
@@ -118,6 +122,107 @@ public class ExerciseSeedController : ControllerBase
             _logger.LogError($"Seeding failed: {ex.Message}");
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Applies curated variant families (SeedData/exercise-variant-families.json) by setting
+    /// ParentExerciseTypeId on each variant, and backfills WeightType from tags
+    /// (body only -> BodyWeight, stretching -> None, otherwise Standard).
+    /// Idempotent: safe to run multiple times.
+    /// </summary>
+    [HttpPost("seed-variants")]
+    public async Task<IActionResult> SeedVariants()
+    {
+        var jsonPath = Path.Combine(Directory.GetCurrentDirectory(), "SeedData", "exercise-variant-families.json");
+        if (!System.IO.File.Exists(jsonPath))
+        {
+            return BadRequest(new { error = $"Variant families file not found: {jsonPath}" });
+        }
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var families = JsonSerializer.Deserialize<VariantFamiliesFile>(
+            await System.IO.File.ReadAllTextAsync(jsonPath), options)?.Families
+            ?? new List<VariantFamily>();
+
+        var byName = await _context.ExerciseTypes
+            .Select(et => new { et.Id, et.Name })
+            .ToListAsync();
+        var lookup = byName
+            .GroupBy(x => x.Name.ToLowerInvariant().Trim())
+            .ToDictionary(g => g.Key, g => g.First().Id);
+
+        int linked = 0, missing = 0;
+        var missingNames = new List<string>();
+
+        foreach (var family in families)
+        {
+            if (!lookup.TryGetValue(family.Parent.ToLowerInvariant().Trim(), out var parentId))
+            {
+                missing++;
+                missingNames.Add(family.Parent);
+                continue;
+            }
+
+            foreach (var variantName in family.Variants)
+            {
+                var key = variantName.ToLowerInvariant().Trim();
+                if (!lookup.TryGetValue(key, out var variantId) || variantId == parentId)
+                {
+                    missing++;
+                    missingNames.Add(variantName);
+                    continue;
+                }
+
+                var variant = await _context.ExerciseTypes.FindAsync(variantId);
+                if (variant != null && variant.ParentExerciseTypeId != parentId)
+                {
+                    variant.ParentExerciseTypeId = parentId;
+                    linked++;
+                }
+            }
+        }
+
+        // Backfill WeightType from tags: body only -> BodyWeight, stretching -> None, else Standard
+        var weightUpdated = 0;
+        var all = await _context.ExerciseTypes
+            .Select(et => new { et.Id, et.Tags })
+            .ToListAsync();
+        foreach (var row in all)
+        {
+            var equipment = row.Tags?.FirstOrDefault(t => t.Category == "equipment")?.Name ?? "";
+            var type = row.Tags?.FirstOrDefault(t => t.Category == "type")?.Name ?? "";
+            var weightType = equipment.Equals("body only", StringComparison.OrdinalIgnoreCase)
+                ? "BodyWeight"
+                : type.Equals("stretching", StringComparison.OrdinalIgnoreCase)
+                    ? "None"
+                    : "Standard";
+
+            var entity = await _context.ExerciseTypes.FindAsync(row.Id);
+            if (entity != null && entity.WeightType != weightType)
+            {
+                entity.WeightType = weightType;
+                weightUpdated++;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Variant seed completed",
+            families = families.Count,
+            linked,
+            weightTypeUpdated = weightUpdated,
+            missing = missing > 0 ? missingNames : null
+        });
+    }
+
+    private sealed record VariantFamiliesFile(List<VariantFamily> Families);
+
+    private sealed class VariantFamily
+    {
+        public string Parent { get; set; } = string.Empty;
+        public List<string> Variants { get; set; } = new();
     }
 
     /// <summary>
