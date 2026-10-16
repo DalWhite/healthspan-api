@@ -186,6 +186,9 @@ namespace healthspan_api.Migrations
                     b.Property<double?>("BodyWeight")
                         .HasColumnType("double");
 
+                    b.Property<Guid?>("ClientEntityId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("Comments")
                         .HasColumnType("longtext");
 
@@ -218,6 +221,9 @@ namespace healthspan_api.Migrations
                         .HasColumnType("char(36)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ClientEntityId")
+                        .IsUnique();
 
                     b.HasIndex("TypeId");
 
@@ -672,6 +678,41 @@ namespace healthspan_api.Migrations
                     b.ToTable("RoutineWorkoutTemplate");
                 });
 
+            modelBuilder.Entity("SyncOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Action")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("AppliedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid?>("ClientEntityId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Entity")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("OpId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("ServerEntityId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OpId")
+                        .IsUnique();
+
+                    b.ToTable("SyncOperations");
+                });
+
             modelBuilder.Entity("User", b =>
                 {
                     b.Property<string>("Id")
@@ -768,6 +809,9 @@ namespace healthspan_api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid?>("ClientEntityId")
+                        .HasColumnType("char(36)");
+
                     b.Property<string>("DailySessionKey")
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
@@ -785,6 +829,9 @@ namespace healthspan_api.Migrations
                         .HasColumnType("varchar(255)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ClientEntityId")
+                        .IsUnique();
 
                     b.HasIndex("DailySessionKey")
                         .IsUnique();

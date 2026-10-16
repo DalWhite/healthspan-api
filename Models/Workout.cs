@@ -1,6 +1,7 @@
 public class Workout
 {
     public Guid Id { get; set; }
+    public Guid? ClientEntityId { get; set; }
     public DateTime? Date { get; set; }
     public string Type { get; set; }
     public string UserId { get; set; }
