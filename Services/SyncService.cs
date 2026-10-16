@@ -1,0 +1,516 @@
+using System.Text.Json;
+using Controllers.ApiContracts.Sync;
+using healthspan_api.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Services;
+
+namespace Services;
+
+/// <summary>
+/// Applies the client's offline queue in order, idempotently:
+/// OpId is logged, entities carry their ClientEntityId, and replays are
+/// answered as deduped instead of creating duplicates.
+/// </summary>
+public class SyncService
+{
+    private readonly MainDbContext _context;
+    private readonly CurrentUserProvider _userProvider;
+    private readonly ILogger<SyncService> _logger;
+
+    public SyncService(
+        MainDbContext context,
+        CurrentUserProvider userProvider,
+        ILogger<SyncService> logger)
+    {
+        _context = context;
+        _userProvider = userProvider;
+        _logger = logger;
+    }
+
+    public async Task<SyncResponse> SyncAsync(
+        SyncRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = _userProvider.GetCurrentUserId();
+        var response = new SyncResponse();
+
+        foreach (var operation in request.Operations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (operation.OpId == Guid.Empty
+                || string.IsNullOrWhiteSpace(operation.Entity)
+                || string.IsNullOrWhiteSpace(operation.Action))
+            {
+                response.Failed.Add(new SyncFailure
+                {
+                    OpId = operation.OpId,
+                    Reason = "Malformed sync operation."
+                });
+                continue;
+            }
+
+            var alreadyApplied = await _context.SyncOperations
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    entry => entry.UserId == userId && entry.OpId == operation.OpId,
+                    cancellationToken);
+
+            if (alreadyApplied is not null)
+            {
+                response.Deduped++;
+                if (alreadyApplied.ServerEntityId is not null
+                    && operation.ClientEntityId is not null)
+                {
+                    response.IdMap.Add(new SyncIdMap
+                    {
+                        ClientId = operation.ClientEntityId.Value,
+                        ServerId = alreadyApplied.ServerEntityId.Value
+                    });
+                }
+
+                continue;
+            }
+
+            try
+            {
+                var result = await ApplyAsync(operation, userId, cancellationToken);
+                if (result.Failure is not null)
+                {
+                    response.Failed.Add(new SyncFailure
+                    {
+                        OpId = operation.OpId,
+                        Reason = result.Failure
+                    });
+                    continue;
+                }
+
+                response.Applied++;
+                if (result.ServerId is not null && operation.ClientEntityId is not null)
+                {
+                    response.IdMap.Add(new SyncIdMap
+                    {
+                        ClientId = operation.ClientEntityId.Value,
+                        ServerId = result.ServerId.Value
+                    });
+                }
+
+                _context.SyncOperations.Add(new SyncOperation
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    OpId = operation.OpId,
+                    Entity = operation.Entity,
+                    Action = operation.Action,
+                    ClientEntityId = operation.ClientEntityId,
+                    ServerEntityId = result.ServerId,
+                    AppliedAtUtc = DateTime.UtcNow
+                });
+
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex)
+            {
+                // A failed write poisons the tracked context for the rest of
+                // the batch: roll it back and report the op as failed. The
+                // client drops it after the first attempt (see SyncEngine).
+                _logger.LogWarning(
+                    ex,
+                    "Sync operation {OpId} ({Entity}/{Action}) failed for user {UserId}.",
+                    operation.OpId,
+                    operation.Entity,
+                    operation.Action,
+                    userId);
+                _context.ChangeTracker.Clear();
+                response.Failed.Add(new SyncFailure
+                {
+                    OpId = operation.OpId,
+                    Reason = "The operation could not be saved."
+                });
+            }
+        }
+
+        return response;
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> ApplyAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var entity = operation.Entity.Trim().ToLowerInvariant();
+        var action = operation.Action.Trim().ToLowerInvariant();
+
+        return (entity, action) switch
+        {
+            ("workout", "create") => await CreateWorkoutAsync(operation, userId, cancellationToken),
+            ("workout", "update") => await UpdateWorkoutAsync(operation, userId, cancellationToken),
+            ("workout", "delete") => await DeleteWorkoutAsync(operation, userId, cancellationToken),
+            ("exercise", "create") => await CreateExerciseAsync(operation, userId, cancellationToken),
+            ("exercise", "update") => await UpdateExerciseAsync(operation, userId, cancellationToken),
+            ("exercise", "delete") => await DeleteExerciseAsync(operation, userId, cancellationToken),
+            _ => (null, $"Unknown entity/action: {operation.Entity}/{operation.Action}")
+        };
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> CreateWorkoutAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        if (operation.ClientEntityId is null)
+        {
+            return (null, "Missing client entity id.");
+        }
+
+        var clientId = operation.ClientEntityId.Value;
+        var existing = await _context.Workouts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                workout => workout.UserId == userId
+                           && workout.ClientEntityId == clientId,
+                cancellationToken);
+        if (existing is not null)
+        {
+            return (existing.Id, null);
+        }
+
+        var date = TryGetDate(operation.Payload, "date")
+            ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var type = TryGetString(operation.Payload, "type") ?? "Training";
+        var workoutId = Guid.NewGuid();
+
+        _context.Workouts.Add(new Workout
+        {
+            Id = workoutId,
+            ClientEntityId = clientId,
+            UserId = userId,
+            Date = date.ToDateTime(
+                date == DateOnly.FromDateTime(DateTime.Today)
+                    ? TimeOnly.FromDateTime(DateTime.Now)
+                    : TimeOnly.MinValue),
+            Type = string.IsNullOrWhiteSpace(type) ? "Training" : type.Trim(),
+            DailySessionKey = WorkoutDailySessionKey.CreateForSession(
+                userId,
+                date,
+                workoutId),
+            Exercises = []
+        });
+
+        return (workoutId, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> UpdateWorkoutAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var workout = await ResolveWorkoutAsync(operation, userId, cancellationToken);
+        if (workout is null)
+        {
+            return (null, "Workout not found.");
+        }
+
+        var date = TryGetDate(operation.Payload, "date");
+        if (date is not null)
+        {
+            workout.Date = date.Value.ToDateTime(
+                date.Value == DateOnly.FromDateTime(DateTime.Today)
+                    ? TimeOnly.FromDateTime(DateTime.Now)
+                    : TimeOnly.MinValue);
+            workout.DailySessionKey = WorkoutDailySessionKey.CreateForSession(
+                workout.UserId,
+                date.Value,
+                workout.Id);
+        }
+
+        var type = TryGetString(operation.Payload, "type");
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            workout.Type = type.Trim();
+        }
+
+        return (workout.Id, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> DeleteWorkoutAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var workout = await _context.Workouts
+            .IgnoreQueryFilters()
+            .Include(candidate => candidate.Exercises)
+            .FirstOrDefaultAsync(
+                candidate => candidate.UserId == userId
+                             && (candidate.ClientEntityId == operation.ClientEntityId
+                                 || candidate.Id == operation.ClientEntityId),
+                cancellationToken);
+        if (workout is null)
+        {
+            return (operation.ClientEntityId, null);
+        }
+
+        var workoutId = workout.Id;
+        _context.Exercises.RemoveRange(workout.Exercises);
+        _context.Workouts.Remove(workout);
+
+        // The exercises' sync logs must go too: their client ids are freed
+        // and a later create with the same id must not be treated as dedup.
+        var exerciseIds = workout.Exercises.Select(exercise => exercise.Id).ToList();
+        _context.SyncOperations
+            .RemoveRange(_context.SyncOperations
+                .IgnoreQueryFilters()
+                .Where(entry => entry.UserId == userId
+                                && entry.Entity == "exercise"
+                                && entry.ServerEntityId != null
+                                && exerciseIds.Contains(entry.ServerEntityId.Value)));
+
+        return (workoutId, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> CreateExerciseAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        if (operation.ClientEntityId is null)
+        {
+            return (null, "Missing client entity id.");
+        }
+
+        var clientId = operation.ClientEntityId.Value;
+        var existing = await _context.Exercises
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                exercise => exercise.Workout.UserId == userId
+                            && exercise.ClientEntityId == clientId,
+                cancellationToken);
+        if (existing is not null)
+        {
+            return (existing.Id, null);
+        }
+
+        var workoutId = await ResolveWorkoutIdAsync(operation.Payload, userId, cancellationToken);
+        if (workoutId is null)
+        {
+            return (null, "Parent workout not found.");
+        }
+
+        var exercise = new Exercise
+        {
+            Id = Guid.NewGuid(),
+            ClientEntityId = clientId,
+            WorkoutId = workoutId,
+            TypeId = TryGetInt(operation.Payload, "typeId"),
+            Series = TryGetInt(operation.Payload, "series"),
+            Repetitions = TryGetInt(operation.Payload, "repetitions"),
+            Weight = TryGetDouble(operation.Payload, "weight"),
+            Comments = TryGetString(operation.Payload, "comments") ?? "",
+            Tags = TryGetStringList(operation.Payload, "tags") ?? []
+        };
+
+        var weightType = TryGetString(operation.Payload, "weightType");
+        var bodyWeight = TryGetDouble(operation.Payload, "bodyWeight");
+        var addedWeight = TryGetDouble(operation.Payload, "addedWeight");
+        if (weightType == "BodyWeight")
+        {
+            exercise.BodyWeight = bodyWeight ?? 1;
+        }
+        else if (weightType == "AddedWeight")
+        {
+            exercise.AddedWeight = addedWeight ?? 0;
+        }
+        else if (bodyWeight is not null)
+        {
+            exercise.BodyWeight = bodyWeight;
+        }
+        else if (addedWeight is not null)
+        {
+            exercise.AddedWeight = addedWeight;
+        }
+
+        _context.Exercises.Add(exercise);
+        return (exercise.Id, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> UpdateExerciseAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var exercise = await _context.Exercises
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.Workout.UserId == userId
+                             && (candidate.ClientEntityId == operation.ClientEntityId
+                                 || candidate.Id == operation.ClientEntityId),
+                cancellationToken);
+        if (exercise is null)
+        {
+            return (null, "Exercise not found.");
+        }
+
+        var payload = operation.Payload;
+        if (payload.TryGetProperty("series", out _))
+        {
+            exercise.Series = TryGetInt(payload, "series");
+        }
+
+        if (payload.TryGetProperty("repetitions", out _))
+        {
+            exercise.Repetitions = TryGetInt(payload, "repetitions");
+        }
+
+        if (payload.TryGetProperty("weight", out _))
+        {
+            exercise.Weight = TryGetDouble(payload, "weight");
+        }
+
+        if (payload.TryGetProperty("bodyWeight", out _))
+        {
+            exercise.BodyWeight = TryGetDouble(payload, "bodyWeight");
+        }
+
+        if (payload.TryGetProperty("addedWeight", out _))
+        {
+            exercise.AddedWeight = TryGetDouble(payload, "addedWeight");
+        }
+
+        if (payload.TryGetProperty("comments", out _))
+        {
+            exercise.Comments = TryGetString(payload, "comments") ?? "";
+        }
+
+        if (payload.TryGetProperty("tags", out _))
+        {
+            var tags = TryGetStringList(payload, "tags");
+            if (tags is { Count: > 0 })
+            {
+                exercise.Tags = tags;
+            }
+        }
+
+        return (exercise.Id, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> DeleteExerciseAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var exercise = await _context.Exercises
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.Workout.UserId == userId
+                             && (candidate.ClientEntityId == operation.ClientEntityId
+                                 || candidate.Id == operation.ClientEntityId),
+                cancellationToken);
+        if (exercise is null)
+        {
+            return (operation.ClientEntityId, null);
+        }
+
+        var exerciseId = exercise.Id;
+        _context.Exercises.Remove(exercise);
+        _context.SyncOperations
+            .RemoveRange(_context.SyncOperations
+                .IgnoreQueryFilters()
+                .Where(entry => entry.UserId == userId
+                                && entry.Entity == "exercise"
+                                && entry.ServerEntityId != null
+                                && entry.ServerEntityId.Value == exerciseId));
+
+        return (exerciseId, null);
+    }
+
+    private async Task<Workout?> ResolveWorkoutAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+        => await _context.Workouts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.UserId == userId
+                             && (candidate.ClientEntityId == operation.ClientEntityId
+                                 || candidate.Id == operation.ClientEntityId),
+                cancellationToken);
+
+    private async Task<Guid?> ResolveWorkoutIdAsync(
+        JsonElement payload,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var raw = TryGetString(payload, "workoutId");
+        if (raw is null || !Guid.TryParse(raw, out var workoutId))
+        {
+            return null;
+        }
+
+        var workout = await _context.Workouts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.UserId == userId
+                             && (candidate.Id == workoutId
+                                 || candidate.ClientEntityId == workoutId),
+                cancellationToken);
+
+        // Return the SERVER id: the payload may reference a client-generated
+        // id from the same offline batch.
+        return workout?.Id;
+    }
+
+    private static string? TryGetString(JsonElement payload, string name)
+        => payload.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static int? TryGetInt(JsonElement payload, string name)
+        => payload.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : null;
+
+    private static double? TryGetDouble(JsonElement payload, string name)
+        => payload.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetDouble()
+            : null;
+
+    private static List<string>? TryGetStringList(JsonElement payload, string name)
+    {
+        if (!payload.TryGetProperty(name, out var value)
+            || value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        return value
+            .EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .ToList();
+    }
+
+    private static DateOnly? TryGetDate(JsonElement payload, string name)
+    {
+        if (!payload.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString();
+            if (DateOnly.TryParse(text, out var dateOnly))
+            {
+                return dateOnly;
+            }
+
+            if (DateTime.TryParse(text, out var dateTime))
+            {
+                return DateOnly.FromDateTime(dateTime);
+            }
+        }
+
+        return null;
+    }
+}

@@ -1,6 +1,7 @@
 public class Exercise
 {
     public Guid Id { get; set; }
+    public Guid? ClientEntityId { get; set; }
     public int? Series { get; set; }
     public int? Repetitions { get; set; }
     public double? Weight { get; set; }

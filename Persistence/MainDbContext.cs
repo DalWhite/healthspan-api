@@ -21,6 +21,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<AnalyticsPermission> AnalyticsPermissions { get; set; }
     public DbSet<GalpinAssessment> GalpinAssessments { get; set; }
     public DbSet<GalpinAssessmentScore> GalpinAssessmentScores { get; set; }
+    public DbSet<SyncOperation> SyncOperations { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
@@ -46,6 +47,18 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
         builder.Entity<Workout>()
             .HasIndex(workout => workout.DailySessionKey)
+            .IsUnique();
+
+        builder.Entity<Workout>()
+            .HasIndex(workout => workout.ClientEntityId)
+            .IsUnique();
+
+        builder.Entity<Exercise>()
+            .HasIndex(exercise => exercise.ClientEntityId)
+            .IsUnique();
+
+        builder.Entity<SyncOperation>()
+            .HasIndex(entry => new { entry.UserId, entry.OpId })
             .IsUnique();
 
         builder.Entity<Muscle>()
