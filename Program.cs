@@ -112,7 +112,7 @@ builder.Services.AddCors(options =>
         options.AddPolicy(name: CorsPolicyName,
                           policyBuilder =>
                           {
-                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net")
+                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net", "http://localhost:5000")
                                            .AllowAnyMethod()
                                            .AllowAnyHeader()
                                            .WithExposedHeaders("X-Total-Count");
