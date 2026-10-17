@@ -441,6 +441,24 @@ public class SyncService
         string userId,
         CancellationToken cancellationToken)
     {
+        // Prefer the client id: it is always present, even when the parent
+        // workout was created offline and its create op lands in the same
+        // batch (the server id is only known after that op is applied).
+        var clientRaw = TryGetString(payload, "workoutClientId");
+        if (clientRaw is not null && Guid.TryParse(clientRaw, out var clientGuid))
+        {
+            var byClient = await _context.Workouts
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    candidate => candidate.UserId == userId
+                                 && candidate.ClientEntityId == clientGuid,
+                    cancellationToken);
+            if (byClient is not null)
+            {
+                return byClient.Id;
+            }
+        }
+
         var raw = TryGetString(payload, "workoutId");
         if (raw is null || !Guid.TryParse(raw, out var workoutId))
         {
