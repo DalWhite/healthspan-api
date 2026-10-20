@@ -13,6 +13,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<Muscle> Muscles { get; set; }
     public DbSet<Routine> Routines { get; set; }
     public DbSet<WorkoutTemplate> WorkoutTemplate { get; set; }
+    public DbSet<WorkoutTemplateExercise> WorkoutTemplateExercises { get; set; }
     public DbSet<HealthProfile> HealthProfiles { get; set; }
     public DbSet<HealthMetricDefinition> HealthMetricDefinitions { get; set; }
     public DbSet<ReferenceRange> ReferenceRanges { get; set; }
@@ -217,6 +218,40 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
                 (left, right) => TrainingTagsEqual(left, right),
                 value => GetTrainingTagsHashCode(value),
                 value => CloneTrainingTags(value)));
+
+        // Ordered exercise slots inside a template (routine-prescriptions design).
+        builder.Entity<WorkoutTemplateExercise>()
+            .HasOne(wte => wte.WorkoutTemplate)
+            .WithMany(wt => wt.Exercises)
+            .HasForeignKey(wte => wte.WorkoutTemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<WorkoutTemplateExercise>()
+            .HasOne(wte => wte.ExerciseType)
+            .WithMany()
+            .HasForeignKey(wte => wte.ExerciseTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<WorkoutTemplateExercise>()
+            .HasIndex(wte => new { wte.WorkoutTemplateId, wte.Order })
+            .IsUnique();
+
+        builder.Entity<WorkoutTemplateExercise>()
+            .HasIndex(wte => wte.ExerciseTypeId);
+
+        // Logged exercise -> routine slot it came from; logged history survives
+        // template/prescription deletion.
+        builder.Entity<Exercise>()
+            .HasOne<WorkoutTemplateExercise>()
+            .WithMany()
+            .HasForeignKey(exercise => exercise.SourceTemplateExerciseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Routine>()
+            .HasOne(routine => routine.Trainer)
+            .WithMany()
+            .HasForeignKey(routine => routine.TrainerId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         base.OnModelCreating(builder);
     }

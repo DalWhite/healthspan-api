@@ -487,6 +487,134 @@ public class WorkoutsRepository
             cancellationToken);
     }
 
+    /// <summary>
+    /// Completed workouts = explicit CompletedAt (POST /workouts/{id}/complete),
+    /// NOT "has exercises": an applied routine draft must not count as done.
+    /// </summary>
+    public Task<List<Workout>> GetCompletedWorkoutsSinceAsync(
+        string userId,
+        DateTime since,
+        CancellationToken cancellationToken = default)
+        => _context.Workouts
+            .IgnoreQueryFilters()
+            .Where(workout =>
+                workout.UserId == userId
+                && workout.Date.HasValue
+                && workout.Date.Value >= since
+                && workout.CompletedAt != null)
+            .Include(workout => workout.Exercises)
+                .ThenInclude(exercise => exercise.Type)
+            .AsSplitQuery()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// "Start today's workout": copies the routine's ordered exercise slots into
+    /// the day's session as normal, editable exercises. Idempotent: an exercise
+    /// type already present in the session is skipped. Never auto-completes.
+    /// </summary>
+    public async Task<ApplyTemplateOutcome> ApplyTemplateToSessionAsync(
+        string userId,
+        Guid routineId,
+        int templateId,
+        DateOnly date,
+        CancellationToken cancellationToken = default)
+    {
+        var template = await _context.WorkoutTemplate
+            .IgnoreQueryFilters()
+            .Include(workoutTemplate => workoutTemplate.Exercises)
+                .ThenInclude(templateExercise => templateExercise.ExerciseType)
+            .Include(workoutTemplate => workoutTemplate.Routines)
+            .FirstOrDefaultAsync(
+                workoutTemplate =>
+                    workoutTemplate.Id == templateId
+                    && workoutTemplate.Routines.Any(
+                        routine => routine.Id == routineId && routine.UserId == userId),
+                cancellationToken);
+        if (template is null)
+        {
+            return new ApplyTemplateOutcome(ApplyTemplateResult.TemplateNotFound, null, false);
+        }
+
+        var slots = (template.Exercises ?? [])
+            .OrderBy(templateExercise => templateExercise.Order)
+            .ToList();
+        if (slots.Count == 0)
+        {
+            return new ApplyTemplateOutcome(ApplyTemplateResult.TemplateEmpty, null, false);
+        }
+
+        var (session, created) = await GetOrCreateWorkoutSessionAsync(
+            userId,
+            date,
+            template.Type,
+            cancellationToken);
+
+        var sessionTypeIds = (session.Exercises ?? [])
+            .Where(exercise => exercise.TypeId.HasValue)
+            .Select(exercise => exercise.TypeId!.Value)
+            .ToHashSet();
+
+        var added = 0;
+        foreach (var slot in slots)
+        {
+            if (!sessionTypeIds.Add(slot.ExerciseTypeId))
+            {
+                continue;
+            }
+
+            var exercise = new Exercise
+            {
+                Id = Guid.NewGuid(),
+                WorkoutId = session.Id,
+                TypeId = slot.ExerciseTypeId,
+                Series = slot.Sets,
+                Repetitions = slot.Reps,
+                Weight = slot.LoadKg,
+                Comments = slot.Notes,
+                SourceTemplateExerciseId = slot.Id,
+                Tags = []
+            };
+            _context.Exercises.Add(exercise);
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        return new ApplyTemplateOutcome(
+            added > 0 ? ApplyTemplateResult.Applied : ApplyTemplateResult.AlreadyApplied,
+            session,
+            created);
+    }
+
+    /// <summary>
+    /// Explicit workout completion. Idempotent: re-completing keeps the first
+    /// CompletedAt.
+    /// </summary>
+    public async Task<Workout?> CompleteWorkoutAsync(
+        Guid workoutId,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var workout = await _context.Workouts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.Id == workoutId && candidate.UserId == userId,
+                cancellationToken);
+        if (workout is null)
+        {
+            return null;
+        }
+
+        workout.CompletedAt ??= DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetWorkoutSessionAsync(workoutId, userId, cancellationToken);
+    }
+
     private IQueryable<Workout> SessionQuery(string userId, bool asNoTracking = true)
     {
         var query = _context.Workouts
@@ -517,3 +645,16 @@ public class WorkoutsRepository
 public sealed record WorkoutHistoryPage(
     IReadOnlyList<Workout> Workouts,
     int TotalCount);
+
+public enum ApplyTemplateResult
+{
+    Applied,
+    AlreadyApplied,
+    TemplateNotFound,
+    TemplateEmpty
+}
+
+public sealed record ApplyTemplateOutcome(
+    ApplyTemplateResult Result,
+    Workout Workout,
+    bool SessionCreated);

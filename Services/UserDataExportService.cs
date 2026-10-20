@@ -77,7 +77,8 @@ public sealed class UserDataExportService
             .AsNoTracking()
             .Where(item => item.UserId == userId)
             .Include(item => item.WorkoutTemplates)
-            .ThenInclude(item => item.ExerciseTypes)
+            .ThenInclude(item => item.Exercises)
+                .ThenInclude(item => item.ExerciseType)
             .OrderBy(item => item.Name)
             .ToListAsync(cancellationToken);
 
@@ -174,12 +175,19 @@ public sealed class UserDataExportService
                         template.Type,
                         template.DaysOfWeek,
                         template.Goal,
-                        ExerciseTypes = template.ExerciseTypes
-                            .OrderBy(type => type.Name)
-                            .Select(type => new
+                        ExerciseTypes = template.Exercises
+                            .OrderBy(exercise => exercise.Order)
+                            .Select(exercise => new
                             {
-                                type.Id,
-                                type.Name
+                                exercise.Id,
+                                ExerciseTypeId = exercise.ExerciseType?.Id,
+                                ExerciseTypeName = exercise.ExerciseType?.Name,
+                                exercise.Order,
+                                exercise.Sets,
+                                exercise.Reps,
+                                exercise.LoadKg,
+                                exercise.RestSeconds,
+                                exercise.Notes
                             })
                     })
             })

@@ -347,7 +347,7 @@ public class ExerciseTypesRepository
             return DeleteExerciseTypeResult.InUseByExercises;
         }
 
-        if (_context.WorkoutTemplate.Any(template => template.ExerciseTypes.Any(exerciseType => exerciseType.Id == id)))
+        if (_context.WorkoutTemplateExercises.Any(templateExercise => templateExercise.ExerciseTypeId == id))
         {
             return DeleteExerciseTypeResult.InUseByWorkoutTemplates;
         }

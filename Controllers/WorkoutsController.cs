@@ -15,6 +15,8 @@ public class WorkoutsController : ControllerBase
     private readonly CurrentUserProvider _userProvider;
     private readonly TrainingAccessService _trainingAccessService;
     private readonly WeeklyTrainingSummaryService _weeklyTrainingSummaryService;
+    private readonly RoutineAdherenceService _routineAdherenceService;
+    private readonly RoutinesRepository _routinesRepository;
     private readonly ILogger<WorkoutsController> _logger;
 
     public WorkoutsController(
@@ -24,6 +26,8 @@ public class WorkoutsController : ControllerBase
         CurrentUserProvider userProvider,
         TrainingAccessService trainingAccessService,
         WeeklyTrainingSummaryService weeklyTrainingSummaryService,
+        RoutineAdherenceService routineAdherenceService,
+        RoutinesRepository routinesRepository,
         ILogger<WorkoutsController> logger)
     {
         _workoutsRepository = workoutRepository;
@@ -32,6 +36,8 @@ public class WorkoutsController : ControllerBase
         _userProvider = userProvider;
         _trainingAccessService = trainingAccessService;
         _weeklyTrainingSummaryService = weeklyTrainingSummaryService;
+        _routineAdherenceService = routineAdherenceService;
+        _routinesRepository = routinesRepository;
         _logger = logger;
     }
     [HttpGet]
@@ -301,6 +307,234 @@ public class WorkoutsController : ControllerBase
         catch (Exception ex)
         {
             return Unexpected("Failed to start today's workout.", ex);
+        }
+    }
+
+    /// <summary>
+    /// "Start today's workout" from a routine: copies the routine workout's
+    /// ordered exercises into the day's session as normal editable exercises.
+    /// Idempotent — applying twice does not duplicate exercises.
+    /// </summary>
+    [HttpPost("apply-template")]
+    public async Task<ActionResult<WorkoutSessionResource>> ApplyRoutineTemplate(
+        ApplyTemplateResource resource,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            DateOnly sessionDate;
+            if (string.IsNullOrWhiteSpace(resource.Date))
+            {
+                sessionDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            }
+            else if (!DateOnly.TryParseExact(resource.Date, "yyyy-MM-dd", out sessionDate))
+            {
+                return Problem(
+                    title: "Use a date like 2026-10-20.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var outcome = await _workoutsRepository.ApplyTemplateToSessionAsync(
+                userId,
+                resource.RoutineId,
+                resource.TemplateId,
+                sessionDate,
+                cancellationToken);
+
+            switch (outcome.Result)
+            {
+                case ApplyTemplateResult.TemplateNotFound:
+                    return Problem(
+                        title: "We couldn't find that routine workout.",
+                        statusCode: StatusCodes.Status404NotFound);
+                case ApplyTemplateResult.TemplateEmpty:
+                    return Problem(
+                        title: "This routine workout has no exercises yet. Add some exercises to the routine first.",
+                        statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var response = await MapSessionAsync(outcome.Workout, userId, cancellationToken);
+            return outcome.SessionCreated
+                ? CreatedAtAction(nameof(GetWorkout), new { id = outcome.Workout.Id }, response)
+                : Ok(response);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to start the routine workout.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Explicit "I finished this workout". Idempotent. Completed-workout
+    /// counting (adherence, history progress) uses this, never exercise count.
+    /// </summary>
+    [HttpPost("{id:guid}/complete")]
+    public async Task<ActionResult<WorkoutSessionResource>> CompleteWorkout(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var workout = await _workoutsRepository.CompleteWorkoutAsync(
+                id,
+                userId,
+                cancellationToken);
+            if (workout is null)
+            {
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Ok(await MapSessionAsync(workout, userId, cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to complete the workout.", ex);
+        }
+    }
+
+    /// <summary>
+    /// "Save as routine" from History: creates a one-workday routine from a
+    /// real logged workout. Exercises keep their logged order; initial targets
+    /// are the values actually done that day. The FE lands on the routine
+    /// editor with everything prefilled and editable.
+    /// </summary>
+    [HttpPost("{id:guid}/save-as-routine")]
+    public async Task<IActionResult> SaveWorkoutAsRoutine(
+        Guid id,
+        SaveAsRoutineResource request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var userId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Unauthorized();
+            }
+
+            var name = string.IsNullOrWhiteSpace(request?.Name) ? null : request.Name.Trim();
+            if (name is not null && (name.Length < 2 || name.Length > 100))
+            {
+                return new ObjectResult(new ValidationProblemDetails(new Dictionary<string, string[]>
+                {
+                    ["name"] = ["The routine name must be between 2 and 100 characters."]
+                }))
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            if (name is not null && await _routinesRepository.NameExistsAsync(
+                    userId,
+                    name,
+                    cancellationToken: cancellationToken))
+            {
+                return new ObjectResult(new ValidationProblemDetails(new Dictionary<string, string[]>
+                {
+                    ["name"] = ["You already have a routine with this name."]
+                }))
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            var routine = await _routinesRepository.CreateRoutineFromWorkoutAsync(
+                id,
+                userId,
+                name,
+                cancellationToken);
+            if (routine is null)
+            {
+                return Problem(
+                    title: "We couldn't find that workout.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            var created = await _routinesRepository.GetRoutineAsync(
+                routine.Id,
+                userId,
+                cancellationToken);
+            Response.Headers.ETag = RoutineMapper.ETagOf(created.Version);
+            return CreatedAtAction(
+                "GetRoutine",
+                "Routines",
+                new { id = routine.Id },
+                RoutineMapper.Map(created));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to save the workout as a routine.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Planned vs completed per routine workout day (History progress view).
+    /// </summary>
+    [HttpGet("adherence")]
+    public async Task<ActionResult<RoutineAdherenceResource>> GetRoutineAdherence(
+        Guid routineId,
+        string traineeId,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(requesterUserId, userId))
+            {
+                return Forbid();
+            }
+
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var fromDate = from ?? toDate.AddDays(-30);
+            if (fromDate > toDate)
+            {
+                return Problem(
+                    title: "The start date cannot be after the end date.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var adherence = await _routineAdherenceService.GetAdherenceAsync(
+                routineId,
+                userId,
+                fromDate,
+                toDate,
+                cancellationToken);
+            if (adherence is null)
+            {
+                return Problem(
+                    title: "Routine not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Ok(adherence);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to load routine progress.", ex);
         }
     }
 
