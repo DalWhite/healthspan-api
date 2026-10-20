@@ -22,4 +22,19 @@ public class Exercise
     /// so adherence can compare planned vs executed.
     /// </summary>
     public int? SourceTemplateExerciseId { get; set; }
+    /// <summary>
+    /// Block this exercise belongs to. Null means the implicit Normal block, so
+    /// sessions logged before the universal tracker are unchanged.
+    /// </summary>
+    public Guid? BlockId { get; set; }
+    public WorkoutBlock Block { get; set; }
+    /// <summary>Dense 1..n position inside the block.</summary>
+    public int? Order { get; set; }
+    /// <summary>Attempts of a skill/speed/power move (e.g. muscle-ups 8/0).</summary>
+    public int? Attempts { get; set; }
+    public int? CompletedAttempts { get; set; }
+    /// <summary>Free-text intention that can override the type adaptation mapping.</summary>
+    public string? QualityIntent { get; set; }
+    public ExerciseLoadType? LoadType { get; set; }
+    public List<ExerciseAdaptation> Adaptations { get; set; } = [];
 }

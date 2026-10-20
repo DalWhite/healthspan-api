@@ -149,6 +149,9 @@ public class SyncService
             ("exercise", "create") => await CreateExerciseAsync(operation, userId, cancellationToken),
             ("exercise", "update") => await UpdateExerciseAsync(operation, userId, cancellationToken),
             ("exercise", "delete") => await DeleteExerciseAsync(operation, userId, cancellationToken),
+            ("workout_block", "create") => await CreateBlockAsync(operation, userId, cancellationToken),
+            ("workout_block", "update") => await UpdateBlockAsync(operation, userId, cancellationToken),
+            ("workout_block", "delete") => await DeleteBlockAsync(operation, userId, cancellationToken),
             _ => (null, $"Unknown entity/action: {operation.Entity}/{operation.Action}")
         };
     }
@@ -180,7 +183,7 @@ public class SyncService
         var type = TryGetString(operation.Payload, "type") ?? "Training";
         var workoutId = Guid.NewGuid();
 
-        _context.Workouts.Add(new Workout
+        var workout = new Workout
         {
             Id = workoutId,
             ClientEntityId = clientId,
@@ -195,7 +198,10 @@ public class SyncService
                 date,
                 workoutId),
             Exercises = []
-        });
+        };
+
+        ApplyWorkoutTracker(workout, operation.Payload);
+        _context.Workouts.Add(workout);
 
         return (workoutId, null);
     }
@@ -229,6 +235,8 @@ public class SyncService
         {
             workout.Type = type.Trim();
         }
+
+        ApplyWorkoutTracker(workout, operation.Payload);
 
         return (workout.Id, null);
     }
@@ -330,6 +338,28 @@ public class SyncService
             exercise.AddedWeight = addedWeight;
         }
 
+        var blockId = await ResolveBlockIdAsync(operation.Payload, userId, cancellationToken);
+        if (blockId is not null)
+        {
+            exercise.BlockId = blockId;
+        }
+
+        exercise.Order = TryGetInt(operation.Payload, "order");
+        exercise.Attempts = TryGetInt(operation.Payload, "attempts");
+        exercise.CompletedAttempts = TryGetInt(operation.Payload, "completedAttempts");
+        exercise.QualityIntent = TryGetString(operation.Payload, "qualityIntent");
+        if (TrainingTrackerParser.TryLoadType(
+                TryGetString(operation.Payload, "loadType"),
+                out var loadType))
+        {
+            exercise.LoadType = loadType;
+        }
+
+        await ApplyExerciseAdaptationsAsync(
+            exercise,
+            TryGetStringList(operation.Payload, "adaptations"),
+            cancellationToken);
+
         _context.Exercises.Add(exercise);
         return (exercise.Id, null);
     }
@@ -391,6 +421,50 @@ public class SyncService
             }
         }
 
+        if (payload.TryGetProperty("blockId", out _)
+            || payload.TryGetProperty("blockClientId", out _))
+        {
+            var blockId = await ResolveBlockIdAsync(payload, userId, cancellationToken);
+            if (blockId is not null)
+            {
+                exercise.BlockId = blockId;
+            }
+        }
+
+        if (payload.TryGetProperty("order", out _))
+        {
+            exercise.Order = TryGetInt(payload, "order");
+        }
+
+        if (payload.TryGetProperty("attempts", out _))
+        {
+            exercise.Attempts = TryGetInt(payload, "attempts");
+        }
+
+        if (payload.TryGetProperty("completedAttempts", out _))
+        {
+            exercise.CompletedAttempts = TryGetInt(payload, "completedAttempts");
+        }
+
+        if (payload.TryGetProperty("qualityIntent", out _))
+        {
+            exercise.QualityIntent = TryGetString(payload, "qualityIntent");
+        }
+
+        if (payload.TryGetProperty("loadType", out _)
+            && TrainingTrackerParser.TryLoadType(TryGetString(payload, "loadType"), out var loadType))
+        {
+            exercise.LoadType = loadType;
+        }
+
+        if (payload.TryGetProperty("adaptations", out _))
+        {
+            await ApplyExerciseAdaptationsAsync(
+                exercise,
+                TryGetStringList(payload, "adaptations"),
+                cancellationToken);
+        }
+
         return (exercise.Id, null);
     }
 
@@ -422,6 +496,262 @@ public class SyncService
                                 && entry.ServerEntityId.Value == exerciseId));
 
         return (exerciseId, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> CreateBlockAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        if (operation.ClientEntityId is null)
+        {
+            return (null, "Missing client entity id.");
+        }
+
+        var clientId = operation.ClientEntityId.Value;
+        var existing = await _context.WorkoutBlocks
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                block => block.Workout.UserId == userId
+                         && block.ClientEntityId == clientId,
+                cancellationToken);
+        if (existing is not null)
+        {
+            return (existing.Id, null);
+        }
+
+        var workoutId = await ResolveWorkoutIdAsync(operation.Payload, userId, cancellationToken);
+        if (workoutId is null)
+        {
+            return (null, "Parent workout not found.");
+        }
+
+        if (!TrainingTrackerParser.TryBlockType(
+                TryGetString(operation.Payload, "type"),
+                out var blockType))
+        {
+            return (null, "Unknown block type.");
+        }
+
+        var block = new WorkoutBlock
+        {
+            Id = Guid.NewGuid(),
+            ClientEntityId = clientId,
+            WorkoutId = workoutId.Value,
+            Order = TryGetInt(operation.Payload, "order") ?? 1,
+            Type = blockType,
+            Label = TryGetString(operation.Payload, "label"),
+            Rounds = TryGetInt(operation.Payload, "rounds")
+        };
+
+        _context.WorkoutBlocks.Add(block);
+        return (block.Id, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> UpdateBlockAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var block = await ResolveBlockAsync(operation, userId, cancellationToken);
+        if (block is null)
+        {
+            return (null, "Block not found.");
+        }
+
+        var payload = operation.Payload;
+
+        if (payload.TryGetProperty("type", out _)
+            && TrainingTrackerParser.TryBlockType(TryGetString(payload, "type"), out var blockType))
+        {
+            block.Type = blockType;
+        }
+
+        if (payload.TryGetProperty("order", out _))
+        {
+            block.Order = TryGetInt(payload, "order") ?? block.Order;
+        }
+
+        if (payload.TryGetProperty("label", out _))
+        {
+            block.Label = TryGetString(payload, "label");
+        }
+
+        if (payload.TryGetProperty("rounds", out _))
+        {
+            block.Rounds = TryGetInt(payload, "rounds");
+        }
+
+        return (block.Id, null);
+    }
+
+    private async Task<(Guid? ServerId, string? Failure)> DeleteBlockAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var block = await ResolveBlockAsync(operation, userId, cancellationToken);
+        if (block is null)
+        {
+            return (operation.ClientEntityId, null);
+        }
+
+        var blockId = block.Id;
+
+        // Exercises that belonged to the block survive as an implicit Normal block.
+        foreach (var exercise in block.Exercises ?? [])
+        {
+            exercise.BlockId = null;
+        }
+
+        _context.WorkoutBlocks.Remove(block);
+        _context.SyncOperations
+            .RemoveRange(_context.SyncOperations
+                .IgnoreQueryFilters()
+                .Where(entry => entry.UserId == userId
+                                && entry.Entity == "workout_block"
+                                && entry.ServerEntityId != null
+                                && entry.ServerEntityId.Value == blockId));
+
+        return (blockId, null);
+    }
+
+    private async Task<WorkoutBlock?> ResolveBlockAsync(
+        SyncOperationPayload operation,
+        string userId,
+        CancellationToken cancellationToken)
+        => await _context.WorkoutBlocks
+            .IgnoreQueryFilters()
+            .Include(block => block.Exercises)
+            .FirstOrDefaultAsync(
+                candidate => candidate.Workout.UserId == userId
+                             && (candidate.ClientEntityId == operation.ClientEntityId
+                                 || candidate.Id == operation.ClientEntityId),
+                cancellationToken);
+
+    private async Task<Guid?> ResolveBlockIdAsync(
+        JsonElement payload,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        // Same rule as the parent workout: the client id wins, because a block
+        // created offline can land in the same batch as its exercises.
+        var clientRaw = TryGetString(payload, "blockClientId");
+        if (clientRaw is not null && Guid.TryParse(clientRaw, out var clientGuid))
+        {
+            var byClient = await _context.WorkoutBlocks
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    block => block.Workout.UserId == userId
+                             && block.ClientEntityId == clientGuid,
+                    cancellationToken);
+            if (byClient is not null)
+            {
+                return byClient.Id;
+            }
+        }
+
+        var raw = TryGetString(payload, "blockId");
+        if (raw is null || !Guid.TryParse(raw, out var blockId))
+        {
+            return null;
+        }
+
+        var block = await _context.WorkoutBlocks
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                candidate => candidate.Workout.UserId == userId
+                             && (candidate.Id == blockId
+                                 || candidate.ClientEntityId == blockId),
+                cancellationToken);
+
+        return block?.Id;
+    }
+
+    private static void ApplyWorkoutTracker(Workout workout, JsonElement payload)
+    {
+        if (payload.TryGetProperty("goal", out _))
+        {
+            if (TrainingTrackerParser.TryAdaptation(TryGetString(payload, "goal"), out var goal))
+            {
+                workout.Goal = goal;
+            }
+        }
+
+        if (payload.TryGetProperty("secondaryGoals", out _))
+        {
+            var parsed = (TryGetStringList(payload, "secondaryGoals") ?? [])
+                .Select(name => TrainingTrackerParser.TryAdaptation(name, out var adaptation)
+                    ? adaptation
+                    : (GalpinAdaptationType?)null)
+                .Where(adaptation => adaptation is not null)
+                .Select(adaptation => adaptation!.Value)
+                .Distinct()
+                .ToList();
+            workout.SecondaryGoals = parsed;
+        }
+
+        if (payload.TryGetProperty("modality", out _))
+        {
+            if (TrainingTrackerParser.TryModality(TryGetString(payload, "modality"), out var modality))
+            {
+                workout.Modality = modality;
+            }
+        }
+
+        if (payload.TryGetProperty("perceivedFatigue", out _))
+        {
+            var fatigue = TryGetInt(payload, "perceivedFatigue");
+            if (fatigue is >= 1 and <= 5)
+            {
+                workout.PerceivedFatigue = fatigue;
+            }
+        }
+    }
+
+    private async Task ApplyExerciseAdaptationsAsync(
+        Exercise exercise,
+        List<string>? adaptationNames,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _context.ExerciseAdaptations
+            .IgnoreQueryFilters()
+            .Where(adaptation => adaptation.ExerciseId == exercise.Id)
+            .ToListAsync(cancellationToken);
+        if (existing.Count > 0)
+        {
+            _context.ExerciseAdaptations.RemoveRange(existing);
+        }
+
+        if (adaptationNames is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var wanted = adaptationNames
+            .Select(name => TrainingTrackerParser.TryAdaptation(name, out var adaptation)
+                ? adaptation
+                : (GalpinAdaptationType?)null)
+            .Where(adaptation => adaptation is not null)
+            .Select(adaptation => adaptation!.Value)
+            .Distinct()
+            .ToList();
+        if (wanted.Count == 0)
+        {
+            return;
+        }
+
+        var adaptations = await _context.Adaptations
+            .Where(adaptation => wanted.Contains(adaptation.Type))
+            .ToListAsync(cancellationToken);
+
+        exercise.Adaptations = adaptations
+            .Select(adaptation => new ExerciseAdaptation
+            {
+                ExerciseId = exercise.Id,
+                AdaptationId = adaptation.Id
+            })
+            .ToList();
     }
 
     private async Task<Workout?> ResolveWorkoutAsync(

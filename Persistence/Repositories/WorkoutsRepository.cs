@@ -141,6 +141,7 @@ public class WorkoutsRepository
             .IgnoreQueryFilters()
             .Where(candidate => candidate.UserId == userId)
             .Include(candidate => candidate.Exercises)
+            .Include(candidate => candidate.Blocks)
             .FirstOrDefaultAsync(
                 candidate => candidate.Id == workoutId,
                 cancellationToken);
@@ -150,6 +151,7 @@ public class WorkoutsRepository
         }
 
         _context.Exercises.RemoveRange(workout.Exercises);
+        _context.WorkoutBlocks.RemoveRange(workout.Blocks);
         _context.Workouts.Remove(workout);
         await _context.SaveChangesAsync(cancellationToken);
         return true;
@@ -621,7 +623,11 @@ public class WorkoutsRepository
             .IgnoreQueryFilters()
             .Where(workout => workout.UserId == userId)
             .Include(workout => workout.Exercises)
-                .ThenInclude(exercise => exercise.Type);
+                .ThenInclude(exercise => exercise.Type)
+            .Include(workout => workout.Exercises)
+                .ThenInclude(exercise => exercise.Adaptations)
+                .ThenInclude(adaptation => adaptation.Adaptation)
+            .Include(workout => workout.Blocks);
 
         return asNoTracking ? query.AsNoTracking() : query;
     }
@@ -636,7 +642,11 @@ public class WorkoutsRepository
             .Include(workout => workout.Exercises)
                 .ThenInclude(exercise => exercise.Type)
                     .ThenInclude(type => type.MuscleAssignments)
-                        .ThenInclude(assignment => assignment.Muscle);
+                        .ThenInclude(assignment => assignment.Muscle)
+            .Include(workout => workout.Exercises)
+                .ThenInclude(exercise => exercise.Adaptations)
+                .ThenInclude(adaptation => adaptation.Adaptation)
+            .Include(workout => workout.Blocks);
 
         return asNoTracking ? query.AsNoTracking() : query;
     }
