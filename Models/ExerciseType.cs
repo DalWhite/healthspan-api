@@ -9,7 +9,6 @@ public class ExerciseType
     public string ImageRoute { get; set; }
     public int DifficultyLevel { get; set; }
     public List<User> FavoritedUsers { get; set; }
-    public List<WorkoutTemplate> WorkoutTemplates { get; set; }
     public string WeightType { get; set; }
     public List<ExerciseTypeMuscleAssignment> MuscleAssignments { get; set; } = new();
     

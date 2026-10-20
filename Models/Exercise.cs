@@ -16,4 +16,10 @@ public class Exercise
     public ExerciseType Type { get; set; }
     public Guid? WorkoutId { get; set; }
     public Workout Workout { get; set; }
+    /// <summary>
+    /// Lineage to the routine exercise slot this was applied from
+    /// (POST /workouts/apply-template). Survives template deletion (SetNull),
+    /// so adherence can compare planned vs executed.
+    /// </summary>
+    public int? SourceTemplateExerciseId { get; set; }
 }

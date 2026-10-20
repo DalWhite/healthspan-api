@@ -204,6 +204,9 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("Series")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SourceTemplateExerciseId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Tags")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -224,6 +227,8 @@ namespace healthspan_api.Migrations
 
                     b.HasIndex("ClientEntityId")
                         .IsUnique();
+
+                    b.HasIndex("SourceTemplateExerciseId");
 
                     b.HasIndex("TypeId");
 
@@ -312,21 +317,6 @@ namespace healthspan_api.Migrations
                     b.HasIndex("FavoritedUsersId");
 
                     b.ToTable("ExerciseTypeUser");
-                });
-
-            modelBuilder.Entity("ExerciseTypeWorkoutTemplate", b =>
-                {
-                    b.Property<int>("ExerciseTypesId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("WorkoutTemplatesId")
-                        .HasColumnType("int");
-
-                    b.HasKey("ExerciseTypesId", "WorkoutTemplatesId");
-
-                    b.HasIndex("WorkoutTemplatesId");
-
-                    b.ToTable("ExerciseTypeWorkoutTemplate");
                 });
 
             modelBuilder.Entity("GalpinAssessment", b =>
@@ -653,10 +643,18 @@ namespace healthspan_api.Migrations
                     b.Property<string>("Status")
                         .HasColumnType("longtext");
 
+                    b.Property<string>("TrainerId")
+                        .HasColumnType("varchar(255)");
+
                     b.Property<string>("UserId")
                         .HasColumnType("varchar(255)");
 
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TrainerId");
 
                     b.HasIndex("UserId");
 
@@ -812,6 +810,9 @@ namespace healthspan_api.Migrations
                     b.Property<Guid?>("ClientEntityId")
                         .HasColumnType("char(36)");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("DailySessionKey")
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
@@ -865,6 +866,48 @@ namespace healthspan_api.Migrations
                     b.ToTable("WorkoutTemplate");
                 });
 
+            modelBuilder.Entity("WorkoutTemplateExercise", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ExerciseTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<double?>("LoadKg")
+                        .HasColumnType("double");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Reps")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RestSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Sets")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WorkoutTemplateId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExerciseTypeId");
+
+                    b.HasIndex("WorkoutTemplateId", "Order")
+                        .IsUnique();
+
+                    b.ToTable("WorkoutTemplateExercises");
+                });
+
             modelBuilder.Entity("AnalyticsPermission", b =>
                 {
                     b.HasOne("User", "OwnerUser")
@@ -908,6 +951,11 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("Exercise", b =>
                 {
+                    b.HasOne("WorkoutTemplateExercise", null)
+                        .WithMany()
+                        .HasForeignKey("SourceTemplateExerciseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("ExerciseType", "Type")
                         .WithMany()
                         .HasForeignKey("TypeId");
@@ -961,21 +1009,6 @@ namespace healthspan_api.Migrations
                     b.HasOne("User", null)
                         .WithMany()
                         .HasForeignKey("FavoritedUsersId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ExerciseTypeWorkoutTemplate", b =>
-                {
-                    b.HasOne("ExerciseType", null)
-                        .WithMany()
-                        .HasForeignKey("ExerciseTypesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("WorkoutTemplate", null)
-                        .WithMany()
-                        .HasForeignKey("WorkoutTemplatesId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -1077,9 +1110,16 @@ namespace healthspan_api.Migrations
 
             modelBuilder.Entity("Routine", b =>
                 {
+                    b.HasOne("User", "Trainer")
+                        .WithMany()
+                        .HasForeignKey("TrainerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("User", "User")
                         .WithMany()
                         .HasForeignKey("UserId");
+
+                    b.Navigation("Trainer");
 
                     b.Navigation("User");
                 });
@@ -1119,6 +1159,25 @@ namespace healthspan_api.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("WorkoutTemplateExercise", b =>
+                {
+                    b.HasOne("ExerciseType", "ExerciseType")
+                        .WithMany()
+                        .HasForeignKey("ExerciseTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("WorkoutTemplate", "WorkoutTemplate")
+                        .WithMany("Exercises")
+                        .HasForeignKey("WorkoutTemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ExerciseType");
+
+                    b.Navigation("WorkoutTemplate");
                 });
 
             modelBuilder.Entity("BloodTest", b =>
@@ -1163,6 +1222,11 @@ namespace healthspan_api.Migrations
                 });
 
             modelBuilder.Entity("Workout", b =>
+                {
+                    b.Navigation("Exercises");
+                });
+
+            modelBuilder.Entity("WorkoutTemplate", b =>
                 {
                     b.Navigation("Exercises");
                 });

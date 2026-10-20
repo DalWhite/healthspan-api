@@ -133,6 +133,8 @@ builder.Services.AddScoped<BloodTestsRepository>();
 builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<WeeklyTrainingSummaryService>();
+builder.Services.AddScoped<RoutinePlanService>();
+builder.Services.AddScoped<RoutineAdherenceService>();
 builder.Services.AddScoped<HealthProfileService>();
 builder.Services.AddScoped<TrainingAccessService>();
 builder.Services.AddScoped<SyncService>();
