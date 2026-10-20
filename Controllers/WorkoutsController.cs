@@ -12,6 +12,7 @@ public class WorkoutsController : ControllerBase
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly ExercisesRepository _exercisesRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
+    private readonly TrainingTrackerRepository _trackerRepository;
     private readonly CurrentUserProvider _userProvider;
     private readonly TrainingAccessService _trainingAccessService;
     private readonly WeeklyTrainingSummaryService _weeklyTrainingSummaryService;
@@ -23,6 +24,7 @@ public class WorkoutsController : ControllerBase
         WorkoutsRepository workoutRepository,
         ExercisesRepository exercisesRepository,
         ExerciseTypesRepository exerciseTypesRepository,
+        TrainingTrackerRepository trackerRepository,
         CurrentUserProvider userProvider,
         TrainingAccessService trainingAccessService,
         WeeklyTrainingSummaryService weeklyTrainingSummaryService,
@@ -33,6 +35,7 @@ public class WorkoutsController : ControllerBase
         _workoutsRepository = workoutRepository;
         _exercisesRepository = exercisesRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
+        _trackerRepository = trackerRepository;
         _userProvider = userProvider;
         _trainingAccessService = trainingAccessService;
         _weeklyTrainingSummaryService = weeklyTrainingSummaryService;
@@ -145,14 +148,42 @@ public class WorkoutsController : ControllerBase
                     DateOnly.FromDateTime(workoutResource.Date),
                     workoutResource.Type,
                     cancellationToken);
+            var workout = result.Workout;
+
+            var hasTrackerPayload = workoutResource.Goal is not null
+                || workoutResource.Modality is not null
+                || workoutResource.PerceivedFatigue is not null
+                || workoutResource.SecondaryGoals.Count > 0
+                || workoutResource.Blocks.Count > 0;
+
+            if (hasTrackerPayload)
+            {
+                var unknownType = await ApplyTrackerPayloadAsync(
+                    workout.Id,
+                    userId,
+                    workoutResource,
+                    cancellationToken);
+                if (unknownType is not null)
+                {
+                    return Problem(
+                        title: "Couldn't find that exercise.",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                workout = await _trackerRepository.FindSessionAsync(
+                    workout.Id,
+                    userId,
+                    cancellationToken) ?? workout;
+            }
+
             var response = MapWorkoutHistory(
-                result.Workout,
+                workout,
                 includeExercises: true);
 
             return result.Created
                 ? CreatedAtAction(
                     nameof(GetWorkout),
-                    new { id = result.Workout.Id },
+                    new { id = workout.Id },
                     response)
                 : Ok(response);
         }
@@ -161,6 +192,131 @@ public class WorkoutsController : ControllerBase
             return Unexpected("Failed to prepare the workout.", ex);
         }
     }
+
+    /// <summary>
+    /// Writes the universal tracker payload of POST /workouts. Returns the
+    /// unknown exercise type id, or null when everything was applied.
+    /// </summary>
+    private async Task<int?> ApplyTrackerPayloadAsync(
+        Guid workoutId,
+        string userId,
+        AddWorkoutResource workoutResource,
+        CancellationToken cancellationToken)
+    {
+        await _trackerRepository.UpdateSessionMetaAsync(
+            workoutId,
+            userId,
+            ParseAdaptation(workoutResource.Goal),
+            workoutResource.SecondaryGoals
+                .Select(value => ParseAdaptation(value))
+                .Where(value => value.HasValue)
+                .Select(value => value!.Value)
+                .ToList(),
+            ParseModality(workoutResource.Modality),
+            workoutResource.PerceivedFatigue,
+            cancellationToken);
+
+        foreach (var blockInput in workoutResource.Blocks ?? [])
+        {
+            if (blockInput is null)
+            {
+                continue;
+            }
+
+            var (block, _) = await _trackerRepository.UpsertBlockAsync(
+                workoutId,
+                userId,
+                new WorkoutBlock
+                {
+                    Id = Guid.NewGuid(),
+                    ClientEntityId = blockInput.ClientEntityId,
+                    Order = blockInput.Order,
+                    Type = ParseBlockType(blockInput.Type),
+                    Label = string.IsNullOrWhiteSpace(blockInput.Label) ? null : blockInput.Label.Trim(),
+                    Rounds = blockInput.Rounds
+                },
+                cancellationToken);
+
+            foreach (var exerciseInput in blockInput.Exercises ?? [])
+            {
+                if (exerciseInput is null)
+                {
+                    continue;
+                }
+
+                var exerciseType = _exerciseTypesRepository.GetExerciseType(exerciseInput.TypeId);
+                if (exerciseType is null)
+                {
+                    return exerciseInput.TypeId;
+                }
+
+                var exercise = new Exercise
+                {
+                    Id = Guid.NewGuid(),
+                    ClientEntityId = exerciseInput.ClientEntityId,
+                    WorkoutId = workoutId,
+                    BlockId = block.Id,
+                    Order = exerciseInput.Order,
+                    TypeId = exerciseInput.TypeId,
+                    Type = exerciseType,
+                    Series = exerciseInput.Series,
+                    Repetitions = exerciseInput.Repetitions,
+                    Weight = exerciseInput.Weight.HasValue
+                        ? (double?)exerciseInput.Weight.Value
+                        : null,
+                    BodyWeight = exerciseInput.BodyWeight.HasValue
+                        ? (double?)exerciseInput.BodyWeight.Value
+                        : null,
+                    AddedWeight = exerciseInput.AddedWeight.HasValue
+                        ? (double?)exerciseInput.AddedWeight.Value
+                        : null,
+                    Attempts = exerciseInput.Attempts,
+                    CompletedAttempts = exerciseInput.CompletedAttempts,
+                    QualityIntent = string.IsNullOrWhiteSpace(exerciseInput.QualityIntent)
+                        ? null
+                        : exerciseInput.QualityIntent.Trim(),
+                    LoadType = ParseLoadType(exerciseInput.LoadType),
+                    Comments = exerciseInput.Comments ?? string.Empty,
+                    Tags = ExerciseTagNormalizer.Normalize(exerciseInput.Tags)
+                };
+
+                _exercisesRepository.CalculateComputedValues(exercise, userId);
+
+                await _trackerRepository.UpsertExerciseAsync(
+                    workoutId,
+                    userId,
+                    exercise,
+                    (exerciseInput.Adaptations ?? [])
+                        .Select(value => ParseAdaptation(value))
+                        .Where(value => value.HasValue)
+                        .Select(value => value!.Value)
+                        .ToList(),
+                    cancellationToken);
+            }
+        }
+
+        return null;
+    }
+
+    private static GalpinAdaptationType? ParseAdaptation(string? value)
+        => TrainingTrackerParser.TryAdaptation(value, out var adaptation)
+            ? adaptation
+            : null;
+
+    private static WorkoutModality? ParseModality(string? value)
+        => TrainingTrackerParser.TryModality(value, out var modality)
+            ? modality
+            : null;
+
+    private static WorkoutBlockType ParseBlockType(string? value)
+        => TrainingTrackerParser.TryBlockType(value, out var blockType)
+            ? blockType
+            : WorkoutBlockType.Normal;
+
+    private static ExerciseLoadType? ParseLoadType(string? value)
+        => TrainingTrackerParser.TryLoadType(value, out var loadType)
+            ? loadType
+            : null;
 
     [HttpGet("weekly-summary")]
     public async Task<ActionResult<WeeklyTrainingSummaryResource>>
@@ -590,6 +746,7 @@ public class WorkoutsController : ControllerBase
             var exercise = new Exercise
             {
                 Id = Guid.NewGuid(),
+                ClientEntityId = resource.ClientEntityId,
                 WorkoutId = id,
                 TypeId = resource.TypeId,
                 Series = resource.Series,
@@ -603,11 +760,42 @@ public class WorkoutsController : ControllerBase
                     : null,
                 Comments = resource.Comments,
                 Tags = ExerciseTagNormalizer.Normalize(resource.Tags),
-                Type = exerciseType
+                Type = exerciseType,
+                BlockId = resource.BlockId,
+                Order = resource.Order,
+                Attempts = resource.Attempts,
+                CompletedAttempts = resource.CompletedAttempts,
+                QualityIntent = string.IsNullOrWhiteSpace(resource.QualityIntent)
+                    ? null
+                    : resource.QualityIntent.Trim(),
+                LoadType = ParseLoadType(resource.LoadType)
             };
 
-            _exercisesRepository.AddExercise(exercise, userId);
-            workout.Exercises.Add(exercise);
+            if (resource.BlockId.HasValue
+                && !workout.Blocks.Any(block => block.Id == resource.BlockId.Value))
+            {
+                return Problem(
+                    title: "Block not found in this workout.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            _exercisesRepository.CalculateComputedValues(exercise, userId);
+
+            var (savedExercise, _) = await _trackerRepository.UpsertExerciseAsync(
+                id,
+                userId,
+                exercise,
+                (resource.Adaptations ?? [])
+                    .Select(value => ParseAdaptation(value))
+                    .Where(value => value.HasValue)
+                    .Select(value => value!.Value)
+                    .ToList(),
+                cancellationToken);
+
+            if (!workout.Exercises.Contains(savedExercise))
+            {
+                workout.Exercises.Add(savedExercise);
+            }
 
             return Ok(MapSession(workout, recentTypeIds));
         }
@@ -671,6 +859,125 @@ public class WorkoutsController : ControllerBase
         catch (Exception ex)
         {
             return Unexpected("Failed to duplicate the workout.", ex);
+        }
+    }
+
+    [HttpPost("{id:guid}/blocks")]
+    public async Task<ActionResult<WorkoutSessionResource>> AddWorkoutBlock(
+        Guid id,
+        WorkoutBlockInputResource resource,
+        string traineeId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
+            }
+
+            var workout = await _trackerRepository.FindSessionAsync(
+                id,
+                userId,
+                cancellationToken);
+            if (workout is null)
+            {
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            var (block, _) = await _trackerRepository.UpsertBlockAsync(
+                id,
+                userId,
+                new WorkoutBlock
+                {
+                    Id = Guid.NewGuid(),
+                    ClientEntityId = resource.ClientEntityId,
+                    Order = resource.Order,
+                    Type = ParseBlockType(resource.Type),
+                    Label = string.IsNullOrWhiteSpace(resource.Label)
+                        ? null
+                        : resource.Label.Trim(),
+                    Rounds = resource.Rounds
+                },
+                cancellationToken);
+
+            // EF relationship fixup already attaches the tracked block to the
+            // loaded session; adding it again would duplicate it in the response.
+            if (!workout.Blocks.Contains(block))
+            {
+                workout.Blocks.Add(block);
+            }
+
+            return Ok(MapSession(workout, []));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to add the block to the workout.", ex);
+        }
+    }
+
+    [HttpPatch("{id:guid}")]
+    public async Task<ActionResult<GetWorkoutResource>> PatchWorkoutSession(
+        Guid id,
+        PatchWorkoutSessionResource resource,
+        string traineeId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requesterUserId = _userProvider.GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return Unauthorized();
+            }
+
+            var userId = string.IsNullOrWhiteSpace(traineeId)
+                ? requesterUserId
+                : traineeId;
+            if (!_trainingAccessService.CanAccessUser(
+                    requesterUserId,
+                    userId))
+            {
+                return Forbid();
+            }
+
+            var workout = await _trackerRepository.UpdateSessionMetaAsync(
+                id,
+                userId,
+                ParseAdaptation(resource.Goal),
+                resource.SecondaryGoals?
+                    .Select(value => ParseAdaptation(value))
+                    .Where(value => value.HasValue)
+                    .Select(value => value!.Value)
+                    .ToList(),
+                ParseModality(resource.Modality),
+                resource.PerceivedFatigue,
+                cancellationToken);
+            if (workout is null)
+            {
+                return Problem(
+                    title: "Workout not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Ok(MapWorkoutHistory(workout, includeExercises: true));
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to update the workout.", ex);
         }
     }
 
@@ -821,13 +1128,22 @@ public class WorkoutsController : ControllerBase
         Workout workout,
         IReadOnlyCollection<int> recentTypeIds)
     {
+        var exercises = workout.Exercises ?? [];
+
         return new WorkoutSessionResource
         {
             Id = workout.Id,
             Date = DateOnly.FromDateTime(workout.Date ?? DateTime.Today),
             Type = workout.Type,
             RecentExerciseTypeIds = recentTypeIds.ToList(),
-            Exercises = (workout.Exercises ?? [])
+            Goal = workout.Goal?.ToString(),
+            SecondaryGoals = (workout.SecondaryGoals ?? [])
+                .Select(goal => goal.ToString())
+                .ToList(),
+            Modality = workout.Modality?.ToString(),
+            PerceivedFatigue = workout.PerceivedFatigue,
+            CompletedAt = workout.CompletedAt,
+            Exercises = exercises
                 .Select(exercise => new WorkoutSessionExerciseResource
                 {
                     Id = exercise.Id,
@@ -843,7 +1159,59 @@ public class WorkoutsController : ControllerBase
                         ? (decimal?)exercise.AddedWeight.Value
                         : null,
                     Comments = exercise.Comments,
-                    Tags = ExerciseTagNormalizer.Normalize(exercise.Tags)
+                    Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
+                    BlockId = exercise.BlockId,
+                    Order = exercise.Order,
+                    Attempts = exercise.Attempts,
+                    CompletedAttempts = exercise.CompletedAttempts,
+                    QualityIntent = exercise.QualityIntent,
+                    LoadType = exercise.LoadType?.ToString(),
+                    Adaptations = GetExerciseAdaptations(exercise)
+                })
+                .ToList(),
+            // Only explicit blocks are returned; exercises with no BlockId stay
+            // in the flat list, which is the implicit Normal block.
+            Blocks = (workout.Blocks ?? [])
+                .OrderBy(block => block.Order)
+                .Select(block => new WorkoutBlockResource
+                {
+                    Id = block.Id,
+                    ClientEntityId = block.ClientEntityId,
+                    Order = block.Order,
+                    Type = block.Type.ToString(),
+                    Label = block.Label,
+                    Rounds = block.Rounds,
+                    Exercises = exercises
+                        .Where(exercise => exercise.BlockId == block.Id)
+                        .OrderBy(exercise => exercise.Order ?? int.MaxValue)
+                        .ThenBy(exercise => exercise.Id)
+                        .Select(exercise => new WorkoutSessionExerciseResource
+                        {
+                            Id = exercise.Id,
+                            TypeId = exercise.TypeId ?? 0,
+                            Name = exercise.Type?.Name ?? "Exercise",
+                            Series = exercise.Series,
+                            Repetitions = exercise.Repetitions,
+                            Weight = exercise.Weight.HasValue
+                                ? (decimal?)exercise.Weight.Value
+                                : null,
+                            BodyWeight = exercise.BodyWeight.HasValue
+                                ? (decimal?)exercise.BodyWeight.Value
+                                : null,
+                            AddedWeight = exercise.AddedWeight.HasValue
+                                ? (decimal?)exercise.AddedWeight.Value
+                                : null,
+                            Comments = exercise.Comments,
+                            Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
+                            BlockId = exercise.BlockId,
+                            Order = exercise.Order,
+                            Attempts = exercise.Attempts,
+                            CompletedAttempts = exercise.CompletedAttempts,
+                            QualityIntent = exercise.QualityIntent,
+                            LoadType = exercise.LoadType?.ToString(),
+                            Adaptations = GetExerciseAdaptations(exercise)
+                        })
+                        .ToList()
                 })
                 .ToList()
         };
@@ -870,8 +1238,34 @@ public class WorkoutsController : ControllerBase
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(tag => tag)
                 .ToList(),
+            Goal = workout.Goal?.ToString(),
+            SecondaryGoals = (workout.SecondaryGoals ?? [])
+                .Select(goal => goal.ToString())
+                .ToList(),
+            Modality = workout.Modality?.ToString(),
+            PerceivedFatigue = workout.PerceivedFatigue,
             Exercises = includeExercises
                 ? exercises.Select(MapWorkoutHistoryExercise).ToList()
+                : [],
+            Blocks = includeExercises
+                ? (workout.Blocks ?? [])
+                    .OrderBy(block => block.Order)
+                    .Select(block => new WorkoutBlockHistoryResource
+                    {
+                        Id = block.Id,
+                        ClientEntityId = block.ClientEntityId,
+                        Order = block.Order,
+                        Type = block.Type.ToString(),
+                        Label = block.Label,
+                        Rounds = block.Rounds,
+                        Exercises = exercises
+                            .Where(exercise => exercise.BlockId == block.Id)
+                            .OrderBy(exercise => exercise.Order ?? int.MaxValue)
+                            .ThenBy(exercise => exercise.Id)
+                            .Select(MapWorkoutHistoryExercise)
+                            .ToList()
+                    })
+                    .ToList()
                 : []
         };
     }
@@ -890,8 +1284,27 @@ public class WorkoutsController : ControllerBase
             Volume = GetExerciseVolume(exercise),
             Comments = exercise.Comments,
             Tags = ExerciseTagNormalizer.Normalize(exercise.Tags),
-            Muscles = GetExerciseMuscles(exercise)
+            Muscles = GetExerciseMuscles(exercise),
+            BlockId = exercise.BlockId,
+            Order = exercise.Order,
+            Attempts = exercise.Attempts,
+            CompletedAttempts = exercise.CompletedAttempts,
+            QualityIntent = exercise.QualityIntent,
+            LoadType = exercise.LoadType?.ToString(),
+            Adaptations = GetExerciseAdaptations(exercise)
         };
+
+    /// <summary>
+    /// Per-session adaptation override of a logged exercise. Empty when the
+    /// canonical exercise-type mapping is what applies.
+    /// </summary>
+    private static List<string> GetExerciseAdaptations(Exercise exercise)
+        => (exercise.Adaptations ?? [])
+            .Where(adaptation => adaptation.Adaptation is not null)
+            .OrderBy(adaptation => adaptation.Adaptation.Order)
+            .Select(adaptation => adaptation.Adaptation.Type.ToString())
+            .Distinct()
+            .ToList();
 
     private static double GetExerciseVolume(Exercise exercise)
     {

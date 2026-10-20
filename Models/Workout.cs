@@ -13,4 +13,17 @@ public class Workout
     public DateTime? CompletedAt { get; set; }
     public User User { get; set; }
     public List<Exercise> Exercises { get; set; } = [];
+    public List<WorkoutBlock> Blocks { get; set; } = [];
+
+    /// <summary>
+    /// Session goal chosen from the 9 Galpin adaptations (universal training
+    /// tracker). Kept as the enum so the goal is queryable, not a free string.
+    /// </summary>
+    public GalpinAdaptationType? Goal { get; set; }
+    /// <summary>Secondary adaptations the session also trained.</summary>
+    public List<GalpinAdaptationType> SecondaryGoals { get; set; } = [];
+    /// <summary>How the session was performed (modalidad).</summary>
+    public WorkoutModality? Modality { get; set; }
+    /// <summary>User perceived fatigue 1..5, the input of the readiness score.</summary>
+    public int? PerceivedFatigue { get; set; }
 }

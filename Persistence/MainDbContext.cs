@@ -23,6 +23,10 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<GalpinAssessment> GalpinAssessments { get; set; }
     public DbSet<GalpinAssessmentScore> GalpinAssessmentScores { get; set; }
     public DbSet<SyncOperation> SyncOperations { get; set; }
+    public DbSet<WorkoutBlock> WorkoutBlocks { get; set; }
+    public DbSet<Adaptation> Adaptations { get; set; }
+    public DbSet<ExerciseTypeAdaptation> ExerciseTypeAdaptations { get; set; }
+    public DbSet<ExerciseAdaptation> ExerciseAdaptations { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
@@ -253,6 +257,136 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
             .HasForeignKey(routine => routine.TrainerId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // ------------------------------------------------------------------
+        // Universal training tracker (docs/training-tracker-universal-design.md)
+        // ------------------------------------------------------------------
+
+        builder.Entity<Workout>()
+            .Property(workout => workout.Goal)
+            .HasConversion(
+                value => value.HasValue ? value.Value.ToString() : null,
+                value => string.IsNullOrWhiteSpace(value) ? null : ParseEnumOrDefault(value, default(GalpinAdaptationType)));
+
+        builder.Entity<Workout>()
+            .Property(workout => workout.Modality)
+            .HasConversion(
+                value => value.HasValue ? value.Value.ToString() : null,
+                value => string.IsNullOrWhiteSpace(value) ? null : ParseEnumOrDefault(value, default(WorkoutModality)));
+
+        var secondaryGoalsProperty = builder.Entity<Workout>()
+            .Property(workout => workout.SecondaryGoals)
+            .HasConversion(
+                value => SerializeAdaptationGoals(value),
+                value => DeserializeAdaptationGoals(value));
+        secondaryGoalsProperty.Metadata.SetValueComparer(
+            new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<GalpinAdaptationType>>(
+                (left, right) => AdaptationGoalsEqual(left, right),
+                value => GetAdaptationGoalsHashCode(value),
+                value => CloneAdaptationGoals(value)));
+
+        builder.Entity<WorkoutBlock>()
+            .HasIndex(block => block.ClientEntityId)
+            .IsUnique();
+
+        builder.Entity<WorkoutBlock>()
+            .HasOne(block => block.Workout)
+            .WithMany(workout => workout.Blocks)
+            .HasForeignKey(block => block.WorkoutId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<WorkoutBlock>()
+            .HasIndex(block => new { block.WorkoutId, block.Order })
+            .IsUnique();
+
+        builder.Entity<WorkoutBlock>()
+            .Property(block => block.Label)
+            .HasMaxLength(100);
+
+        builder.Entity<WorkoutBlock>()
+            .Property(block => block.Type)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(WorkoutBlockType)));
+
+        builder.Entity<Exercise>()
+            .HasOne(exercise => exercise.Block)
+            .WithMany(block => block.Exercises)
+            .HasForeignKey(exercise => exercise.BlockId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Exercise>()
+            .Property(exercise => exercise.QualityIntent)
+            .HasMaxLength(200);
+
+        builder.Entity<Exercise>()
+            .Property(exercise => exercise.LoadType)
+            .HasConversion(
+                value => value.HasValue ? value.Value.ToString() : null,
+                value => string.IsNullOrWhiteSpace(value) ? null : ParseEnumOrDefault(value, default(ExerciseLoadType)));
+
+        builder.Entity<Adaptation>()
+            .Property(adaptation => adaptation.Id)
+            .ValueGeneratedNever();
+
+        builder.Entity<Adaptation>()
+            .HasIndex(adaptation => adaptation.Type)
+            .IsUnique();
+
+        builder.Entity<Adaptation>()
+            .Property(adaptation => adaptation.Name)
+            .HasMaxLength(100);
+
+        builder.Entity<Adaptation>()
+            .Property(adaptation => adaptation.Color)
+            .HasMaxLength(16);
+
+        builder.Entity<Adaptation>()
+            .Property(adaptation => adaptation.Type)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(GalpinAdaptationType)));
+
+        builder.Entity<ExerciseTypeAdaptation>()
+            .HasOne(mapping => mapping.ExerciseType)
+            .WithMany()
+            .HasForeignKey(mapping => mapping.ExerciseTypeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ExerciseTypeAdaptation>()
+            .HasOne(mapping => mapping.Adaptation)
+            .WithMany(adaptation => adaptation.ExerciseTypeAdaptations)
+            .HasForeignKey(mapping => mapping.AdaptationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ExerciseTypeAdaptation>()
+            .HasIndex(mapping => new { mapping.ExerciseTypeId, mapping.AdaptationId })
+            .IsUnique();
+
+        builder.Entity<ExerciseTypeAdaptation>()
+            .Property(mapping => mapping.Role)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(AdaptationRole)));
+
+        builder.Entity<ExerciseAdaptation>()
+            .HasQueryFilter(adaptation => adaptation.Exercise.Workout.User.Id == _userProvider.GetCurrentUserId());
+
+        builder.Entity<ExerciseAdaptation>()
+            .HasOne(adaptation => adaptation.Exercise)
+            .WithMany(exercise => exercise.Adaptations)
+            .HasForeignKey(adaptation => adaptation.ExerciseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ExerciseAdaptation>()
+            .HasOne(adaptation => adaptation.Adaptation)
+            .WithMany()
+            .HasForeignKey(adaptation => adaptation.AdaptationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ExerciseAdaptation>()
+            .HasIndex(adaptation => new { adaptation.ExerciseId, adaptation.AdaptationId })
+            .IsUnique();
+
         base.OnModelCreating(builder);
     }
 
@@ -363,4 +497,43 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
     private static List<string> CloneTrainingTags(IEnumerable<string> tags)
         => ExerciseTagNormalizer.Normalize(tags);
+
+    private static readonly JsonSerializerOptions AdaptationGoalJsonOptions = new()
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+    };
+
+    private static string SerializeAdaptationGoals(List<GalpinAdaptationType> goals)
+        => JsonSerializer.Serialize(CloneAdaptationGoals(goals), AdaptationGoalJsonOptions);
+
+    private static List<GalpinAdaptationType> DeserializeAdaptationGoals(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        try
+        {
+            return CloneAdaptationGoals(
+                JsonSerializer.Deserialize<List<GalpinAdaptationType>>(value, AdaptationGoalJsonOptions));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static List<GalpinAdaptationType> CloneAdaptationGoals(List<GalpinAdaptationType> goals)
+        => (goals ?? []).Distinct().ToList();
+
+    private static bool AdaptationGoalsEqual(
+        List<GalpinAdaptationType> left,
+        List<GalpinAdaptationType> right)
+        => CloneAdaptationGoals(left).OrderBy(goal => goal).SequenceEqual(CloneAdaptationGoals(right).OrderBy(goal => goal));
+
+    private static int GetAdaptationGoalsHashCode(List<GalpinAdaptationType> goals)
+        => CloneAdaptationGoals(goals)
+            .OrderBy(goal => goal)
+            .Aggregate(17, (hash, goal) => HashCode.Combine(hash, goal));
 }

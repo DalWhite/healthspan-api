@@ -127,12 +127,14 @@ builder.Services.AddScoped<UsersRepository>();
 builder.Services.AddScoped<MuscleRepository>();
 builder.Services.AddScoped<WorkoutsRepository>();
 builder.Services.AddScoped<ExercisesRepository>();
+builder.Services.AddScoped<TrainingTrackerRepository>();
 builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<BloodTestsRepository>();
 builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<WeeklyTrainingSummaryService>();
+builder.Services.AddScoped<TrainingTrackerAnalyticsService>();
 builder.Services.AddScoped<RoutinePlanService>();
 builder.Services.AddScoped<RoutineAdherenceService>();
 builder.Services.AddScoped<HealthProfileService>();
@@ -218,6 +220,11 @@ await using (var scope = app.Services.CreateAsyncScope())
 
         await MuscleCatalogSeeder.UpsertAsync(db);
         await MuscleCatalogSeeder.BackfillExerciseTypeAssignmentsAsync(db);
+
+        // Universal training tracker: the 9 adaptations in canonical order, then
+        // a heuristic mapping only for exercise types that have none yet.
+        await AdaptationCatalogSeeder.UpsertAsync(db);
+        await AdaptationCatalogSeeder.BackfillExerciseTypeAdaptationsAsync(db);
     }
     catch (Exception ex)
     {
