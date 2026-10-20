@@ -458,6 +458,21 @@ public class RoutinesTests : ApiTestBase
         assigned.TrainerId.Should().Be(TestDataSeeder.TestUserId);
         assigned.WorkoutTemplates[0].Exercises[0].Notes
             .Should().Be("Control the descent, 2 seconds down.");
+
+        // The coach opens one of them by id. The routine belongs to the trainee, so the
+        // lookup has to be scoped with traineeId — that is what the trainer editor does.
+        var coachGet = await Client.GetAsync(
+            $"/routines/{created.Id}?traineeId={TestDataSeeder.TraineeUserId}");
+        coachGet.StatusCode.Should().Be(HttpStatusCode.OK);
+        var fetched = await coachGet.Content.ReadFromJsonAsync<RoutineResource>();
+        fetched!.Id.Should().Be(created.Id);
+        fetched.TrainerId.Should().Be(TestDataSeeder.TestUserId);
+        fetched.WorkoutTemplates[0].Exercises[0].Notes
+            .Should().Be("Control the descent, 2 seconds down.");
+
+        // Unscoped, the same routine resolves against the trainer and is not theirs.
+        var unscoped = await Client.GetAsync($"/routines/{created.Id}");
+        unscoped.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private static async Task<Dictionary<string, string[]>> ReadValidationErrors(HttpResponseMessage response)
