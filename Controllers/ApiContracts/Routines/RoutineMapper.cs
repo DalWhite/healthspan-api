@@ -11,6 +11,7 @@ public static class RoutineMapper
             Name = routine.Name,
             Description = routine.Description,
             UserId = routine.UserId,
+            TrainerId = routine.TrainerId,
             Version = routine.Version,
             WorkoutTemplates = (routine.WorkoutTemplates ?? [])
                 .OrderBy(template => template.Id)

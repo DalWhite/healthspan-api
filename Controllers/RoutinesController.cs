@@ -153,6 +153,10 @@ public class RoutinesController : ControllerBase
                 Name = routineResource.Name.Trim(),
                 Description = routineResource.Description,
                 UserId = userId,
+                // A routine a trainer creates for a trainee is owned by the
+                // trainee but remembers which coach assigned it, so the trainee
+                // view can label it. Self-created routines keep TrainerId null.
+                TrainerId = requesterUserId == userId ? null : requesterUserId,
                 WorkoutTemplates = BuildTemplates(routineResource.WorkoutTemplates)
             };
 
