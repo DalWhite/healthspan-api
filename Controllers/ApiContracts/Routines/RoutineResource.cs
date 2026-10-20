@@ -8,6 +8,11 @@ public class RoutineResource
     public string Name { get; set; }
     public string Description { get; set; }
     public string UserId { get; set; }
+    /// <summary>
+    /// Coach who created/assigned this routine (null for self-created routines).
+    /// Derived server-side from the authenticated requester, never sent by the FE.
+    /// </summary>
+    public string? TrainerId { get; set; }
     public int Version { get; set; }
     public List<WorkoutTemplateResource> WorkoutTemplates { get; set; } = [];
 }

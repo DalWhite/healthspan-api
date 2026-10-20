@@ -413,6 +413,53 @@ public class RoutinesTests : ApiTestBase
         errors.Should().ContainKey("name");
     }
 
+    [Fact]
+    public async Task Trainer_Creates_Routine_For_Trainee_Sets_TrainerId_And_Trainee_Sees_It()
+    {
+        var routine = new RoutineResource
+        {
+            Name = $"Coach plan {Guid.NewGuid():N}",
+            Description = "Personal plan from your coach",
+            UserId = TestDataSeeder.TraineeUserId,
+            WorkoutTemplates =
+            [
+                new()
+                {
+                    Type = "Push",
+                    FrequencyPerWeek = 2,
+                    Exercises =
+                    [
+                        new ExercisePrescriptionResource
+                        {
+                            ExerciseTypeId = TestDataSeeder.BenchPressTypeId,
+                            Order = 1,
+                            Sets = 4,
+                            Reps = 8,
+                            LoadKg = 60,
+                            Notes = "Control the descent, 2 seconds down."
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var createResponse = await Client.PostAsJsonAsync("/routines", routine);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<RoutineResource>();
+        created!.UserId.Should().Be(TestDataSeeder.TraineeUserId);
+        created.TrainerId.Should().Be(TestDataSeeder.TestUserId);
+
+        // The coach can list the trainee's routines and sees the explanations.
+        var listResponse = await Client.GetAsync(
+            $"/routines?traineeId={TestDataSeeder.TraineeUserId}");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var list = await listResponse.Content.ReadFromJsonAsync<List<RoutineResource>>();
+        var assigned = list!.Single(entry => entry.Id == created.Id);
+        assigned.TrainerId.Should().Be(TestDataSeeder.TestUserId);
+        assigned.WorkoutTemplates[0].Exercises[0].Notes
+            .Should().Be("Control the descent, 2 seconds down.");
+    }
+
     private static async Task<Dictionary<string, string[]>> ReadValidationErrors(HttpResponseMessage response)
     {
         var body = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
