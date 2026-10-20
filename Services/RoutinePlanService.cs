@@ -56,6 +56,74 @@ public class RoutinePlanService(
     }
 
     /// <summary>
+    /// The workout to do next: the earliest day (today or later) where some
+    /// routine workout day still has weekly quota left. A day whose quota is
+    /// already met this week becomes actionable again when the week resets
+    /// (next Monday). Workout days with no exercises are skipped: there is
+    /// nothing to start.
+    /// </summary>
+    public async Task<RoutineNextWorkoutResource?> GetNextDueAsync(
+        string userId,
+        DateOnly today,
+        CancellationToken cancellationToken = default)
+    {
+        var routines = await routinesRepository.GetRoutinesAsync(userId, cancellationToken);
+        if (routines.Count == 0)
+        {
+            return null;
+        }
+
+        var weekStart = WeekStart(today);
+        var nextWeekStart = weekStart.AddDays(7);
+        var completed = await workoutsRepository.GetCompletedWorkoutsSinceAsync(
+            userId,
+            weekStart.ToDateTime(TimeOnly.MinValue),
+            cancellationToken);
+
+        RoutineNextWorkoutResource? next = null;
+
+        foreach (var routine in routines)
+        {
+            foreach (var template in (routine.WorkoutTemplates ?? []).OrderBy(t => t.Id))
+            {
+                var exercises = (template.Exercises ?? [])
+                    .OrderBy(e => e.Order)
+                    .ToList();
+                if (exercises.Count == 0)
+                {
+                    continue;
+                }
+
+                var quota = Math.Max(1, template.DaysOfWeek);
+                var completedThisWeek = completed.Count(workout =>
+                    workout.Date.HasValue
+                    && workout.Date.Value < nextWeekStart.ToDateTime(TimeOnly.MinValue)
+                    && MatchesTemplate(workout, template));
+
+                var dueDate = completedThisWeek < quota ? today : nextWeekStart;
+                if (next is not null && dueDate >= next.Date)
+                {
+                    continue;
+                }
+
+                next = new RoutineNextWorkoutResource
+                {
+                    Date = dueDate,
+                    PendingNow = dueDate == today,
+                    RoutineId = routine.Id,
+                    RoutineName = routine.Name,
+                    TemplateId = template.Id,
+                    Type = template.Type,
+                    FrequencyPerWeek = quota,
+                    Exercises = exercises.Select(MapExercise).ToList()
+                };
+            }
+        }
+
+        return next;
+    }
+
+    /// <summary>
     /// Completed workouts (CompletedAt != null) in the Monday-Sunday week
     /// containing the date. Shared by plan and adherence.
     /// </summary>
@@ -106,6 +174,7 @@ public class RoutinePlanService(
             Id = exercise.Id,
             ExerciseTypeId = exercise.ExerciseTypeId,
             ExerciseTypeName = exercise.ExerciseType?.Name,
+            Description = exercise.ExerciseType?.Description,
             Order = exercise.Order,
             Sets = exercise.Sets,
             Reps = exercise.Reps,

@@ -121,6 +121,40 @@ public class RoutinesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// The workout to do next (Next workout view). 204 when the user has no
+    /// routine with exercises yet.
+    /// </summary>
+    [HttpGet("next")]
+    public async Task<IActionResult> GetNextWorkout(
+        string traineeId,
+        CancellationToken cancellationToken)
+    {
+        var (requesterUserId, userId, accessError) = ResolveTargetUser(traineeId);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
+        try
+        {
+            var next = await _routinePlanService.GetNextDueAsync(
+                userId,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                cancellationToken);
+            if (next is null)
+            {
+                return NoContent();
+            }
+
+            return Ok(next);
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to load the next workout.", ex);
+        }
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateRoutine(
         RoutineResource routineResource,
