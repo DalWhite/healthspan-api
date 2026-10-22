@@ -154,6 +154,67 @@ public class SyncEndpointTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Sync_ExerciseCreateAndUpdate_RecomputeMaxRepetition()
+    {
+        // t_0f19c744: the offline queue bypasses ExercisesRepository, so the
+        // derived metrics have to be computed in the sync path too. Without
+        // them, every set logged offline leaves MaxRepetition null and the 1RM
+        // trend in the exercise detail never moves.
+        var workoutClientId = Guid.NewGuid();
+        var exerciseClientId = Guid.NewGuid();
+
+        var created = await Client.PostAsync("/sync", SyncJson(new[]
+        {
+            Operation(Guid.NewGuid(), "workout", "create", workoutClientId,
+                new { date = "2026-10-22", type = "Series offline" }),
+            Operation(Guid.NewGuid(), "exercise", "create", exerciseClientId,
+                new
+                {
+                    workoutId = workoutClientId.ToString(),
+                    typeId = 7,
+                    series = 1,
+                    repetitions = 10,
+                    weight = 80.0
+                })
+        }));
+
+        created.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createResult = await created.Content.ReadFromJsonAsync<JsonElement>();
+        createResult.GetProperty("failed").GetArrayLength().Should().Be(0);
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+
+        var afterCreate = await db.Exercises
+            .IgnoreQueryFilters()
+            .SingleAsync(candidate => candidate.ClientEntityId == exerciseClientId);
+        afterCreate.MaxRepetition.Should().BeApproximately(106.6, 0.05);   // 80 * (1 + 10/30)
+        afterCreate.Volume.Should().Be(800);
+
+        var updated = await Client.PostAsync("/sync", SyncJson(new[]
+        {
+            Operation(Guid.NewGuid(), "exercise", "update", exerciseClientId,
+                new { repetitions = 5, weight = 100.0 })
+        }));
+        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updateResult = await updated.Content.ReadFromJsonAsync<JsonElement>();
+        updateResult.GetProperty("applied").GetInt32().Should().Be(1);
+        updateResult.GetProperty("failed").GetArrayLength().Should().Be(0);
+
+        // Fresh scope: the first read already tracks this entity in `db`, and EF
+        // would hand back the cached instance instead of the updated row.
+        using var updateScope = Factory.Services.CreateScope();
+        var updatedDb = updateScope.ServiceProvider.GetRequiredService<MainDbContext>();
+        var afterUpdate = await updatedDb.Exercises
+            .IgnoreQueryFilters()
+            .SingleAsync(candidate => candidate.ClientEntityId == exerciseClientId);
+        afterUpdate.Repetitions.Should().Be(5);
+        afterUpdate.Weight.Should().BeApproximately(100.0, 0.05);
+        afterUpdate.MaxRepetition.Should().BeApproximately(116.6, 0.05);   // 100 * (1 + 5*0.0333)
+        afterUpdate.Volume.Should().Be(500);
+    }
+
+    [Fact]
     public async Task Sync_UnknownEntity_IsReportedAsFailed_NotThrown()
     {
         var opId = Guid.NewGuid();
