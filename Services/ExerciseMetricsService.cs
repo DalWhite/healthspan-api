@@ -11,6 +11,11 @@ public class ExerciseMetricsService
         _exercisesRepository = exercisesRepository;
     }
 
+    // A 0 1RM is not a measurement: it comes from an empty logged row (no reps,
+    // no load) and must never reach the KPIs or the 1RM trend (t_0f19c744).
+    private static bool HasMaxRepetition(Exercise exercise)
+        => exercise.MaxRepetition.HasValue && exercise.MaxRepetition.Value > 0;
+
     public GetExerciseTypeKpis GetExerciseTypeKpisOfUser(
         int exerciseTypeId,
         string userId,
@@ -31,7 +36,7 @@ public class ExerciseMetricsService
         var exercisesWithLoadMetrics = typeExercises
             .Where(exercise =>
                 exercise.Workout?.Date.HasValue == true
-                && exercise.MaxRepetition.HasValue)
+                && HasMaxRepetition(exercise))
             .ToList();
         if (exercisesWithLoadMetrics.Count == 0)
         {
@@ -74,7 +79,7 @@ public class ExerciseMetricsService
         var exercisesInlast3Months = typeExercises
             .Where(e =>
                 e.Workout?.Date >= DateTime.Now.AddMonths(-3)
-                && e.MaxRepetition.HasValue)
+                && HasMaxRepetition(e))
             .ToList();
 
         var oldestExercise = exercisesInlast3Months.MinBy(e => e.Workout.Date);
@@ -113,7 +118,7 @@ public class ExerciseMetricsService
 
         // A trend point represents a workout session, not an individual exercise row.
         var maxRMPerSession = typeExercises
-            .Where(exercise => exercise.MaxRepetition.HasValue)
+            .Where(exercise => HasMaxRepetition(exercise))
             .GroupBy(exercise => new
             {
                 exercise.WorkoutId,
