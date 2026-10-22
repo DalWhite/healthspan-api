@@ -12,6 +12,13 @@ public static class TestDataSeeder
 {
     public static readonly string TestUserId = HealthspanApiFactory.TestUserId;
 
+    /// <summary>
+    /// A trainee whose Trainer is <see cref="TestUserId"/>. The authenticated
+    /// test user acts as this trainee's coach, so trainer→trainee assignment
+    /// paths can be exercised end to end.
+    /// </summary>
+    public static readonly string TraineeUserId = "00000000-0000-0000-0000-0000000000aa";
+
     // Exercise types
     public static readonly int BenchPressTypeId = 1;
     public static readonly int SquatTypeId = 2;
@@ -49,21 +56,36 @@ public static class TestDataSeeder
 
     private static async Task SeedUser(UserManager<User> userManager)
     {
-        if (await userManager.FindByIdAsync(TestUserId) is not null)
-            return;
-
-        var user = new User
+        if (await userManager.FindByIdAsync(TestUserId) is null)
         {
-            Id = TestUserId,
-            UserName = HealthspanApiFactory.TestUserEmail,
-            Email = HealthspanApiFactory.TestUserEmail,
-            Name = "Test User",
-            Age = 30,
-            Weight = 80,
-            Height = 180
-        };
+            var user = new User
+            {
+                Id = TestUserId,
+                UserName = HealthspanApiFactory.TestUserEmail,
+                Email = HealthspanApiFactory.TestUserEmail,
+                Name = "Test User",
+                Age = 30,
+                Weight = 80,
+                Height = 180
+            };
 
-        await userManager.CreateAsync(user, "TestPassword123!");
+            await userManager.CreateAsync(user, "TestPassword123!");
+        }
+
+        if (await userManager.FindByIdAsync(TraineeUserId) is null)
+        {
+            var trainer = await userManager.FindByIdAsync(TestUserId);
+            var trainee = new User
+            {
+                Id = TraineeUserId,
+                UserName = "trainee@healthspan.dev",
+                Email = "trainee@healthspan.dev",
+                Name = "Test Trainee",
+                Trainer = trainer
+            };
+
+            await userManager.CreateAsync(trainee, "TestPassword123!");
+        }
     }
 
     private static async Task SeedMusclesAsync(MainDbContext db)
