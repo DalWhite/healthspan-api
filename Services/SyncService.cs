@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Controllers.ApiContracts.Sync;
 using healthspan_api.Persistence;
+using healthspan_api.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Services;
 
@@ -16,15 +17,18 @@ public class SyncService
     private readonly MainDbContext _context;
     private readonly CurrentUserProvider _userProvider;
     private readonly ILogger<SyncService> _logger;
+    private readonly ExercisesRepository _exercises;
 
     public SyncService(
         MainDbContext context,
         CurrentUserProvider userProvider,
-        ILogger<SyncService> logger)
+        ILogger<SyncService> logger,
+        ExercisesRepository exercises)
     {
         _context = context;
         _userProvider = userProvider;
         _logger = logger;
+        _exercises = exercises;
     }
 
     public async Task<SyncResponse> SyncAsync(
@@ -360,6 +364,10 @@ public class SyncService
             TryGetStringList(operation.Payload, "adaptations"),
             cancellationToken);
 
+        // The offline queue bypasses ExercisesRepository, so the derived metrics
+        // (MaxRepetition/Volume/Intensity) have to be computed here too: without
+        // them the 1RM trend freezes for every set logged offline (t_0f19c744).
+        _exercises.CalculateComputedValues(exercise, userId);
         _context.Exercises.Add(exercise);
         return (exercise.Id, null);
     }
@@ -464,6 +472,10 @@ public class SyncService
                 TryGetStringList(payload, "adaptations"),
                 cancellationToken);
         }
+
+        // Same as the create path: reps/weight changed, so the derived metrics
+        // must be recomputed or the 1RM trend never moves (t_0f19c744).
+        _exercises.CalculateComputedValues(exercise, userId);
 
         return (exercise.Id, null);
     }

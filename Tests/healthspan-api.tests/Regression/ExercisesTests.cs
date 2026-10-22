@@ -691,6 +691,90 @@ public class ExercisesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Empty_Exercise_Row_Never_Mints_A_Zero_OneRM()
+    {
+        // t_0f19c744: "+ serie" creates an empty row (no reps, no load). If it
+        // stores MaxRepetition = 0.0, the 1RM trend silently drops to 0 as soon
+        // as the real set is removed. An empty row must mint no metrics at all.
+        var typeId = 0;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var type = new ExerciseType
+            {
+                Name = $"Empty row {Guid.NewGuid():N}",
+                Description = "Standard load",
+                WeightType = "Standard",
+                Tags = []
+            };
+            db.ExerciseTypes.Add(type);
+            await db.SaveChangesAsync();
+            typeId = type.Id;
+        }
+
+        var placeholder = await Client.PostAsJsonAsync(
+            "/exercises",
+            new AddExerciseResource
+            {
+                TypeId = typeId,
+                WorkoutId = TestDataSeeder.WorkoutId1,
+                Series = 1,
+                Weight = 0
+            });
+        placeholder.StatusCode.Should().Be(HttpStatusCode.Created);
+        var placeholderId = (await placeholder.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("id").GetGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            var stored = await db.Exercises
+                .IgnoreQueryFilters()
+                .SingleAsync(exercise => exercise.Id == placeholderId);
+            stored.MaxRepetition.Should().BeNull();
+            stored.Volume.Should().BeNull();
+            stored.Intensity.Should().BeNull();
+        }
+
+        var filled = await Client.PostAsJsonAsync(
+            "/exercises",
+            new AddExerciseResource
+            {
+                TypeId = typeId,
+                WorkoutId = TestDataSeeder.WorkoutId1,
+                Series = 1,
+                Repetitions = 8,
+                Weight = 80
+            });
+        filled.StatusCode.Should().Be(HttpStatusCode.Created);
+        var filledId = (await filled.Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("id").GetGuid();
+
+        var before = await Client.GetAsync($"/exercises/{typeId}/trends?type=RM");
+        var beforeTrends = await before.Content.ReadFromJsonAsync<GetExerciseTypeTrends>();
+        beforeTrends!.Points.Should().ContainSingle()
+            .Which.Data.Should().BeApproximately(101.3f, 0.1f);
+
+        var kpisBefore = await Client.GetAsync($"/exercises/{typeId}/kpis");
+        var kpisBeforePayload = await kpisBefore.Content
+            .ReadFromJsonAsync<GetExerciseTypeKpis>();
+        kpisBeforePayload!.MaxRM.Should().BeApproximately(101.3f, 0.1f);
+
+        var removed = await Client.DeleteAsync($"/exercises/{filledId}");
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var after = await Client.GetAsync($"/exercises/{typeId}/trends?type=RM");
+        var afterTrends = await after.Content.ReadFromJsonAsync<GetExerciseTypeTrends>();
+        afterTrends!.Points.Should().BeEmpty();
+
+        var kpisAfter = await Client.GetAsync($"/exercises/{typeId}/kpis");
+        var kpisAfterPayload = await kpisAfter.Content
+            .ReadFromJsonAsync<GetExerciseTypeKpis>();
+        kpisAfterPayload!.MaxRM.Should().Be(0f);
+        kpisAfterPayload.Current1RM.Should().Be(0f);
+    }
+
+    [Fact]
     public async Task BodyWeight_Breakdown_RoundTrips_And_Uses_Effective_Load()
     {
         var typeId = 0;
