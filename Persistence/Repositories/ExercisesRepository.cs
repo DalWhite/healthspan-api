@@ -204,6 +204,18 @@ public class ExercisesRepository(MainDbContext context)
     var repetitions = Math.Max(0, exercise.Repetitions ?? 0);
     var series = Math.Max(0, exercise.Series ?? 0);
     exercise.Weight = weight;
+
+    // A row with no reps and no load is an empty placeholder (the "+ serie"
+    // row before the athlete fills it in). Minting MaxRepetition = 0.0 for it
+    // silently drags the 1RM trend down to 0 (t_0f19c744).
+    if (repetitions <= 0 && weight <= 0)
+    {
+      exercise.MaxRepetition = null;
+      exercise.Volume = null;
+      exercise.Intensity = null;
+      return;
+    }
+
     exercise.MaxRepetition = Math.Round(
       weight * (1 + 0.0333 * repetitions),
       1);
