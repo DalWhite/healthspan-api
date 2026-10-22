@@ -74,20 +74,9 @@ public class WorkoutsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(traineeId)
-                ? requesterUserId
-                : traineeId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var shouldPaginate = page.HasValue || pageSize.HasValue;
@@ -123,20 +112,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(workoutResource.UserId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(workoutResource.UserId)
-                ? requesterUserId
-                : workoutResource.UserId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var result = await _workoutsRepository
@@ -177,10 +155,9 @@ public class WorkoutsController : ControllerBase
 
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             return Ok(await _weeklyTrainingSummaryService.GetAsync(
@@ -203,10 +180,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var sessionDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -236,10 +212,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var sessionDate =
@@ -276,10 +251,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var result = resource.CreateNew
@@ -322,10 +296,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             DateOnly sessionDate;
@@ -381,10 +354,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var workout = await _workoutsRepository.CompleteWorkoutAsync(
@@ -420,10 +392,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var name = string.IsNullOrWhiteSpace(request?.Name) ? null : request.Name.Trim();
@@ -494,18 +465,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(traineeId)
-                ? requesterUserId
-                : traineeId;
-            if (!_trainingAccessService.CanAccessUser(requesterUserId, userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -547,20 +509,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(traineeId)
-                ? requesterUserId
-                : traineeId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var workout = await _workoutsRepository.GetWorkoutSessionAsync(
@@ -626,20 +577,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(traineeId)
-                ? requesterUserId
-                : traineeId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var duplicated = await _workoutsRepository
@@ -682,20 +622,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
             {
-                return Unauthorized();
-            }
-
-            var userId = string.IsNullOrWhiteSpace(traineeId)
-                ? requesterUserId
-                : traineeId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    userId))
-            {
-                return Forbid();
+                return accessError;
             }
 
             var domainWorkout = await _workoutsRepository.GetWorkoutHistoryDetailsAsync(
@@ -724,10 +653,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var workout = await _workoutsRepository.UpdateWorkoutHistoryAsync(
@@ -768,10 +696,9 @@ public class WorkoutsController : ControllerBase
     {
         try
         {
-            var userId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
+            if (ResolveTargetUserId(null, out var userId) is { } accessError)
             {
-                return Unauthorized();
+                return accessError;
             }
 
             var deleted = await _workoutsRepository.DeleteWorkoutHistoryAsync(
@@ -802,6 +729,31 @@ public class WorkoutsController : ControllerBase
         {
             return Unexpected("Failed to delete the workout.", ex);
         }
+    }
+
+    /// <summary>
+    /// Resolves the target user for a workout request: the caller themselves
+    /// when no trainee is requested, or the trainee when a trainer is allowed
+    /// to act on their behalf. Returns null when access is granted; otherwise
+    /// the Unauthorized/Forbid result the caller should return. Unifies the
+    /// own/other-user flow so every endpoint shares one access path.
+    /// </summary>
+    private ActionResult? ResolveTargetUserId(string? traineeId, out string userId)
+    {
+        var requesterUserId = _userProvider.GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(requesterUserId))
+        {
+            userId = string.Empty;
+            return Unauthorized();
+        }
+
+        userId = string.IsNullOrWhiteSpace(traineeId) ? requesterUserId : traineeId;
+        if (!_trainingAccessService.CanAccessUser(requesterUserId, userId))
+        {
+            return Forbid();
+        }
+
+        return null;
     }
 
     private async Task<WorkoutSessionResource> MapSessionAsync(
