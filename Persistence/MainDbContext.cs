@@ -26,6 +26,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<SponsoredOffer> SponsoredOffers { get; set; }
     public DbSet<SponsoredEvent> SponsoredEvents { get; set; }
     public DbSet<RecommendationDelivery> RecommendationDeliveries { get; set; }
+    public DbSet<WellnessActivity> WellnessActivities { get; set; }
     public DbSet<WorkoutBlock> WorkoutBlocks { get; set; }
     public DbSet<Adaptation> Adaptations { get; set; }
     public DbSet<ExerciseTypeAdaptation> ExerciseTypeAdaptations { get; set; }
@@ -88,6 +89,38 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
         builder.Entity<RecommendationDelivery>()
             .HasIndex(delivery => new { delivery.UserId, delivery.OccurredAtUtc });
+
+        builder.Entity<WellnessActivity>().HasQueryFilter(activity => activity.UserId == _userProvider.GetCurrentUserId());
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Type)
+            .HasMaxLength(64);
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Dimension)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(WellnessDimension)));
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Notes)
+            .HasMaxLength(2000);
+
+        // Per-type flexible parameters stored as a JSON column (JSONB on MySQL).
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Metadata)
+            .HasConversion(
+                value => value == null ? null : JsonSerializer.Serialize(value, (JsonSerializerOptions?)null),
+                value => string.IsNullOrEmpty(value)
+                    ? null
+                    : JsonSerializer.Deserialize<Dictionary<string, object?>>(value, (JsonSerializerOptions?)null))
+            .HasColumnType("json");
+
+        builder.Entity<WellnessActivity>()
+            .HasIndex(activity => new { activity.UserId, activity.OccurredOnUtc });
+
+        builder.Entity<WellnessActivity>()
+            .HasIndex(activity => new { activity.UserId, activity.Type });
 
         builder.Entity<Workout>()
             .Property(workout => workout.DailySessionKey)
