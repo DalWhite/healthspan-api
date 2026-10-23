@@ -62,6 +62,14 @@ public sealed class ReadinessResource
     public double TotalVolume7d { get; set; }
     public List<ReadinessAdaptationResource> PerAdaptation { get; set; } = [];
     public List<ReadinessSuggestionResource> Suggestions { get; set; } = [];
+
+    /// <summary>
+    /// Optional sponsored slot shown alongside the organic suggestions. Always
+    /// carries the visible "Patrocinado" label and Sponsored=true; null when
+    /// the feature is off or the user is not eligible. Never mixed into
+    /// Suggestions.
+    /// </summary>
+    public SponsoredSlotResource? Sponsored { get; set; }
 }
 
 public sealed class ReadinessAdaptationResource
