@@ -10,17 +10,20 @@ public class ReadinessController : ControllerBase
     private readonly TrainingTrackerAnalyticsService _analyticsService;
     private readonly CurrentUserProvider _userProvider;
     private readonly TrainingAccessService _trainingAccessService;
+    private readonly SponsoredOfferService _sponsoredOfferService;
     private readonly ILogger<ReadinessController> _logger;
 
     public ReadinessController(
         TrainingTrackerAnalyticsService analyticsService,
         CurrentUserProvider userProvider,
         TrainingAccessService trainingAccessService,
+        SponsoredOfferService sponsoredOfferService,
         ILogger<ReadinessController> logger)
     {
         _analyticsService = analyticsService;
         _userProvider = userProvider;
         _trainingAccessService = trainingAccessService;
+        _sponsoredOfferService = sponsoredOfferService;
         _logger = logger;
     }
 
@@ -52,10 +55,20 @@ public class ReadinessController : ControllerBase
 
             var asOf = date ?? DateOnly.FromDateTime(DateTime.Today);
 
-            return Ok(await _analyticsService.GetReadinessAsync(
+            var readiness = await _analyticsService.GetReadinessAsync(
                 userId,
                 asOf.ToDateTime(TimeOnly.MinValue),
-                cancellationToken));
+                cancellationToken);
+
+            // Sponsored slot targets the viewer of the recommendations (the
+            // requester), not the trainee whose data is being viewed.
+            _sponsoredOfferService.LogDelivery(requesterUserId, readiness.Suggestions.Count);
+            readiness.Sponsored = _sponsoredOfferService.TryBuildSlot(
+                requesterUserId,
+                SponsoredSlotContext.Training,
+                readiness.Suggestions.Count);
+
+            return Ok(readiness);
         }
         catch (Exception ex)
         {

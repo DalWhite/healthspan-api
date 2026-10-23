@@ -26,6 +26,7 @@ builder.Services.Configure<AzureBlobStorageSettings>(builder.Configuration);
 builder.Services.Configure<FileSystemDocumentStorageSettings>(builder.Configuration);
 builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configuration);
 builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
+builder.Services.Configure<healthspan_api.Options.SponsoredOffersSettings>(builder.Configuration);
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -146,6 +147,8 @@ builder.Services.AddHostedService<BloodTestProcessingWorker>();
 builder.Services.AddScoped<GalpinAssessmentCatalogService>();
 builder.Services.AddScoped<GalpinAssessmentService>();
 builder.Services.AddScoped<HealthAccessService>();
+builder.Services.AddScoped<SponsoredOffersRepository>();
+builder.Services.AddScoped<SponsoredOfferService>();
 builder.Services.AddScoped<HealthDashboardService>();
 builder.Services.AddScoped<UserDataExportService>();
 builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
