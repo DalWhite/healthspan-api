@@ -13,6 +13,7 @@ public class ActivitiesController : ControllerBase
 {
     private const int MaxTypeLength = 64;
     private const int MaxNotesLength = 2000;
+    private const int MaxCycles = 50;
     private static readonly Regex TypeSlugPattern =
         new(@"^[a-z0-9]+(?:[ _.-][a-z0-9]+)*$", RegexOptions.Compiled);
 
@@ -57,19 +58,50 @@ public class ActivitiesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<WellnessActivityResource>> GetActivities(
+    public IActionResult GetActivities(
         string? type,
         WellnessDimension? dimension,
         DateTime? from,
-        DateTime? to)
+        DateTime? to,
+        int page = 1,
+        int pageSize = 10)
     {
         try
         {
-            var userId = _currentUserProvider.GetCurrentUserId();
-            var activities = _activityService.GetActivities(
-                userId, type, dimension, from, to);
+            if (page < 1)
+            {
+                return ApiProblemResult.Validation(
+                    "activities_page_invalid",
+                    "Page must be 1 or greater.",
+                    errors: new Dictionary<string, string[]>
+                    {
+                        ["page"] = ["Page must be 1 or greater."]
+                    });
+            }
 
-            return Ok(activities.Select(MapActivity).ToList());
+            if (pageSize < 1 || pageSize > 100)
+            {
+                return ApiProblemResult.Validation(
+                    "activities_page_size_invalid",
+                    "Page size must be between 1 and 100.",
+                    errors: new Dictionary<string, string[]>
+                    {
+                        ["pageSize"] = ["Page size must be between 1 and 100."]
+                    });
+            }
+
+            var userId = _currentUserProvider.GetCurrentUserId();
+            var (activities, total) = _activityService.GetActivities(
+                userId, type, dimension, from, to, page, pageSize);
+
+            return Ok(new PagedActivitiesResource
+            {
+                Items = activities.Select(MapActivity).ToList(),
+                Total = total,
+                Page = page,
+                PageSize = pageSize,
+                HasMore = page * pageSize < total
+            });
         }
         catch (Exception ex)
         {
@@ -151,14 +183,24 @@ public class ActivitiesController : ControllerBase
         {
             return ApiProblemResult.Validation(
                 "activity_type_invalid",
-                "Activity type is required and must be a short name (letters, numbers, spaces, '-', '_' or '.').");
+                "Activity type is required and must be a short name (letters, numbers, spaces, '-', '_' or '.').",
+                errors: FieldErrors("type", "Activity type is required and must be a short name (letters, numbers, spaces, '-', '_' or '.')."));
         }
 
-        if (!Enum.IsDefined(resource.Dimension))
+        if (resource.Dimension is null)
+        {
+            return ApiProblemResult.Validation(
+                "activity_dimension_required",
+                "Dimension is required: strength, health or mobility.",
+                errors: FieldErrors("dimension", "Dimension is required: strength, health or mobility."));
+        }
+
+        if (!Enum.IsDefined(resource.Dimension.Value))
         {
             return ApiProblemResult.Validation(
                 "activity_dimension_invalid",
-                "Dimension must be one of: strength, health, mobility.");
+                "Dimension must be one of: strength, health, mobility.",
+                errors: FieldErrors("dimension", "Dimension must be one of: strength, health, mobility."));
         }
 
         if (resource.OccurredOnUtc == default
@@ -166,21 +208,25 @@ public class ActivitiesController : ControllerBase
         {
             return ApiProblemResult.Validation(
                 "activity_date_invalid",
-                "Activity date is required and cannot be in the future.");
+                "Activity date is required and cannot be in the future.",
+                errors: FieldErrors("occurredOnUtc", "Activity date is required and cannot be in the future."));
         }
 
-        if (resource.DurationMinutes.HasValue && resource.DurationMinutes < 0)
+        if (resource.DurationMinutes.HasValue && resource.DurationMinutes < 1)
         {
             return ApiProblemResult.Validation(
                 "activity_duration_invalid",
-                "Duration in minutes cannot be negative.");
+                "Duration in minutes must be at least 1.",
+                errors: FieldErrors("durationMinutes", "Duration in minutes must be at least 1."));
         }
 
-        if (resource.FrequencyPerWeek.HasValue && resource.FrequencyPerWeek < 0)
+        if (resource.FrequencyPerWeek.HasValue
+            && (resource.FrequencyPerWeek < 1 || resource.FrequencyPerWeek > 7))
         {
             return ApiProblemResult.Validation(
                 "activity_frequency_invalid",
-                "Frequency per week cannot be negative.");
+                "Frequency per week must be between 1 and 7.",
+                errors: FieldErrors("frequencyPerWeek", "Frequency per week must be between 1 and 7."));
         }
 
         if (resource.Intensity.HasValue
@@ -188,40 +234,62 @@ public class ActivitiesController : ControllerBase
         {
             return ApiProblemResult.Validation(
                 "activity_intensity_invalid",
-                "Intensity must be between 0 and 10.");
+                "Intensity must be between 0 and 10.",
+                errors: FieldErrors("intensity", "Intensity must be between 0 and 10."));
         }
 
+        // Kept wider than the register prototype's -100..60: sauna sessions run
+        // at 80-100 C. The FE cap is the outlier to fix, not the API range.
         if (resource.TemperatureCelsius.HasValue
             && (resource.TemperatureCelsius < -100 || resource.TemperatureCelsius > 200))
         {
             return ApiProblemResult.Validation(
                 "activity_temperature_invalid",
-                "Temperature must be between -100 and 200 degrees Celsius.");
+                "Temperature must be between -100 and 200 degrees Celsius.",
+                errors: FieldErrors("temperatureCelsius", "Temperature must be between -100 and 200 degrees Celsius."));
         }
 
-        if (resource.Cycles.HasValue && resource.Cycles < 0)
+        if (resource.Cycles.HasValue && (resource.Cycles < 0 || resource.Cycles > MaxCycles))
         {
             return ApiProblemResult.Validation(
                 "activity_cycles_invalid",
-                "Cycles cannot be negative.");
+                $"Cycles must be between 0 and {MaxCycles}.",
+                errors: FieldErrors("cycles", $"Cycles must be between 0 and {MaxCycles}."));
         }
 
         if (resource.Notes is not null && resource.Notes.Length > MaxNotesLength)
         {
             return ApiProblemResult.Validation(
                 "activity_notes_too_long",
-                $"Notes cannot exceed {MaxNotesLength} characters.");
+                $"Notes cannot exceed {MaxNotesLength} characters.",
+                errors: FieldErrors("notes", $"Notes cannot exceed {MaxNotesLength} characters."));
         }
 
         return null;
     }
 
+    private static Dictionary<string, string[]> FieldErrors(string field, string message)
+        => new() { [field] = new[] { message } };
+
+    /// <summary>
+    /// Normalizes any accepted date representation to UTC: date-only or
+    /// offset-less strings are treated as UTC, offset-bearing values are
+    /// converted, so responses always carry an explicit Z.
+    /// </summary>
+    private static DateTime ToUtc(DateTime value)
+        => value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+
     private static WellnessActivityUpdateInput MapInput(WellnessActivityWriteResource resource)
         => new()
         {
             Type = resource.Type,
-            Dimension = resource.Dimension,
-            OccurredOnUtc = resource.OccurredOnUtc,
+            Dimension = resource.Dimension!.Value,
+            OccurredOnUtc = ToUtc(resource.OccurredOnUtc),
             DurationMinutes = resource.DurationMinutes,
             FrequencyPerWeek = resource.FrequencyPerWeek,
             Intensity = resource.Intensity,

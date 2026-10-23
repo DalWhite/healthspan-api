@@ -26,13 +26,15 @@ public class WellnessActivityService(WellnessActivitiesRepository repository)
         });
     }
 
-    public List<WellnessActivity> GetActivities(
+    public (List<WellnessActivity> Items, int Total) GetActivities(
         string userId,
         string? type,
         WellnessDimension? dimension,
         DateTime? fromUtc,
-        DateTime? toUtc)
-        => repository.GetActivities(userId, type, dimension, fromUtc, toUtc);
+        DateTime? toUtc,
+        int page,
+        int pageSize)
+        => repository.GetActivitiesPage(userId, type, dimension, fromUtc, toUtc, page, pageSize);
 
     public WellnessActivity? GetActivity(string userId, Guid activityId)
         => repository.GetActivity(userId, activityId);
