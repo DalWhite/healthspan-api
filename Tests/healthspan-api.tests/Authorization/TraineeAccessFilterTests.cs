@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -266,6 +268,48 @@ public class TraineeAccessFilterTests
 
         scenario.Context.Result.Should().BeOfType<UnauthorizedResult>();
         scenario.NextWasCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Filter_RewritesDeclaredParameter_OmittedFromActionArguments()
+    {
+        // MVC omits optional query parameters that are not supplied from
+        // ActionArguments; the filter must still resolve and add the key so the
+        // action receives the trainer's own id instead of the C# default.
+        var userProvider = CreateAuthenticatedProvider(TrainerId);
+        using var context = CreateContext(userProvider);
+        var accessService = new TrainingAccessService(context);
+        var filter = new TraineeAccessFilter("userId", userProvider, accessService);
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, TrainerId)],
+                "Test"));
+
+        var actionDescriptor = new ControllerActionDescriptor
+        {
+            ControllerName = "ExerciseTypes",
+            ActionName = "GetTrainedExerciseTypes",
+            Parameters = [new ParameterDescriptor { Name = "userId", ParameterType = typeof(string) }]
+        };
+
+        var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), actionDescriptor);
+        var executingContext = new ActionExecutingContext(
+            actionContext, [filter], new Dictionary<string, object?>(), controller: null);
+
+        var nextWasCalled = false;
+        ActionExecutionDelegate next = () =>
+        {
+            nextWasCalled = true;
+            return Task.FromResult(new ActionExecutedContext(actionContext, [filter], controller: null));
+        };
+
+        await filter.OnActionExecutionAsync(executingContext, next);
+
+        executingContext.Result.Should().BeNull();
+        nextWasCalled.Should().BeTrue();
+        executingContext.ActionArguments["userId"].Should().Be(TrainerId);
     }
 
     [Fact]

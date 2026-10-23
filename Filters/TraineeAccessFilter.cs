@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using Services;
@@ -90,8 +92,11 @@ public sealed class TraineeAccessFilter : IAsyncActionFilter
             return;
         }
 
-        if (parameterName is not null && context.ActionArguments.ContainsKey(parameterName))
+        if (parameterName is not null)
         {
+            // Add or overwrite the argument: MVC's action invoker resolves each declared
+            // parameter from ActionArguments by name, so adding a key for an omitted
+            // optional parameter makes the action receive the resolved id.
             context.ActionArguments[parameterName] = targetUserId;
         }
 
@@ -104,11 +109,19 @@ public sealed class TraineeAccessFilter : IAsyncActionFilter
             ? DefaultParameterNames
             : new[] { _parameterName };
 
+        // When a query parameter is omitted, MVC may not include it in ActionArguments
+        // at all, so also consult the action's declared parameters.
+        var declaredParameters = (context.ActionDescriptor as ControllerActionDescriptor)?.Parameters;
+
         foreach (var name in candidateNames)
         {
-            if (context.ActionArguments.TryGetValue(name, out var value))
+            var hasArgument = context.ActionArguments.TryGetValue(name, out var value);
+            var isDeclared = declaredParameters is not null
+                && declaredParameters.Any(parameter => parameter.Name == name);
+
+            if (hasArgument || isDeclared)
             {
-                return (name, value as string);
+                return (name, hasArgument ? value as string : null);
             }
         }
 
