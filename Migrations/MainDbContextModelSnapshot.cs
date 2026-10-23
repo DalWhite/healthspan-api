@@ -671,6 +671,31 @@ namespace healthspan_api.Migrations
                     b.ToTable("Muscles");
                 });
 
+            modelBuilder.Entity("RecommendationDelivery", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("SuggestionCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OccurredAtUtc");
+
+                    b.ToTable("RecommendationDeliveries");
+                });
+
             modelBuilder.Entity("ReferenceRange", b =>
                 {
                     b.Property<int>("Id")
@@ -783,6 +808,83 @@ namespace healthspan_api.Migrations
                     b.HasIndex("WorkoutTemplatesId");
 
                     b.ToTable("RoutineWorkoutTemplate");
+                });
+
+            modelBuilder.Entity("SponsoredEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("OfferId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId");
+
+                    b.HasIndex("UserId", "EventType", "OccurredAtUtc");
+
+                    b.ToTable("SponsoredEvents");
+                });
+
+            modelBuilder.Entity("SponsoredOffer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("ExternalUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("SponsoredOffers");
                 });
 
             modelBuilder.Entity("SyncOperation", b =>
@@ -1342,6 +1444,17 @@ namespace healthspan_api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SponsoredEvent", b =>
+                {
+                    b.HasOne("SponsoredOffer", "Offer")
+                        .WithMany("Events")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Offer");
+                });
+
             modelBuilder.Entity("User", b =>
                 {
                     b.HasOne("User", "Trainer")
@@ -1434,6 +1547,11 @@ namespace healthspan_api.Migrations
             modelBuilder.Entity("Routine", b =>
                 {
                     b.Navigation("Workouts");
+                });
+
+            modelBuilder.Entity("SponsoredOffer", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("User", b =>
