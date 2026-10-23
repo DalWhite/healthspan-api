@@ -55,11 +55,15 @@ series 3-5, reps 5-12, peso 20-140.
 |------:|-------------:|--------:|------------:|
 | 1 000 | 154 s | 6.5 | 1 000 |
 | 5 000 | 1 719 s (28,6 min) | 2.9 | 5 000 |
-| 10 000 | __10K_TIME__ | __10K_RPS__ | 10 000 |
+| 10 000 | 4 687 s (78 min) | 2.1 | 10 000 |
 
 Lectura: ya a 5 000 filas la importación **supera de largo el timeout del FE (300 s)** —
 hoy una importación de 5k es imposible de completar desde la UI. El coste por fila crece
-con N (154 ms/fila a 1k → 344 ms/fila a 5k) por el escaneo de histórico sin índice.
+con N (154 ms/fila a 1k → 344 ms/fila a 5k → 469 ms/fila a 10k) por el escaneo de
+histórico sin índice: superlineal, ~O(N²). A 10k el pipeline no solo es lento: con el
+timeout por defecto de un cliente HTTP normal (o el del FE, 300 s) la importación se
+aborta a mitad dejando datos parciales (verificado: `TaskCanceledException` a mitad del
+lote; no hay rollback ni reanudación).
 
 Harness reproducible: `Tests/healthspan-api.tests/Benchmarks/CsvImportBaselineBenchmark.cs`
 (opt-in, nunca corre en CI normal):
