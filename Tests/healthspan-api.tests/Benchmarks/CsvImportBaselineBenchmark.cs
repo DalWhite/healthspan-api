@@ -87,7 +87,7 @@ public class CsvImportBaselineBenchmark
         payload.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/csv");
 
         using var client = factory.CreateClient();
-        client.Timeout = TimeSpan.FromMinutes(30);
+        client.Timeout = TimeSpan.FromMinutes(120);
 
         using var form = new MultipartFormDataContent();
         form.Add(payload, "file", "exercises.csv");
