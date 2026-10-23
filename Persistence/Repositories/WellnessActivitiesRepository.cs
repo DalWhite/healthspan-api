@@ -13,12 +13,14 @@ public class WellnessActivitiesRepository(MainDbContext context)
         return activity;
     }
 
-    public List<WellnessActivity> GetActivities(
+    public (List<WellnessActivity> Items, int Total) GetActivitiesPage(
         string userId,
         string? type,
         WellnessDimension? dimension,
         DateTime? fromUtc,
-        DateTime? toUtc)
+        DateTime? toUtc,
+        int page,
+        int pageSize)
     {
         var query = context.WellnessActivities
             .IgnoreQueryFilters()
@@ -47,10 +49,15 @@ public class WellnessActivitiesRepository(MainDbContext context)
             query = query.Where(activity => activity.OccurredOnUtc < to);
         }
 
-        return query
+        var total = query.Count();
+        var items = query
             .OrderByDescending(activity => activity.OccurredOnUtc)
             .ThenByDescending(activity => activity.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToList();
+
+        return (items, total);
     }
 
     public WellnessActivity? GetActivity(string userId, Guid activityId)
