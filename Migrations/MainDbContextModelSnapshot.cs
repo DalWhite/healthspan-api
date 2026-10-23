@@ -1012,6 +1012,62 @@ namespace healthspan_api.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("WellnessActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("Cycles")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Dimension")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FrequencyPerWeek")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<decimal?>("Intensity")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("json");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<DateTime>("OccurredOnUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<decimal?>("TemperatureCelsius")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OccurredOnUtc");
+
+                    b.HasIndex("UserId", "Type");
+
+                    b.ToTable("WellnessActivities");
+                });
+
             modelBuilder.Entity("Workout", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1462,6 +1518,17 @@ namespace healthspan_api.Migrations
                         .HasForeignKey("TrainerId");
 
                     b.Navigation("Trainer");
+                });
+
+            modelBuilder.Entity("WellnessActivity", b =>
+                {
+                    b.HasOne("User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Workout", b =>
