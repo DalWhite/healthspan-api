@@ -10,7 +10,6 @@ public class ExerciseTypesController : ControllerBase
 {
     private readonly ExerciseTypesRepository _exerciseTypeRepository;
     private readonly CurrentUserProvider _userProvider;
-    private readonly TrainingAccessService _trainingAccessService;
     private readonly UsersRepository _usersRepository;
     private readonly MuscleRepository _muscleRepository;
     private readonly ILogger<ExerciseTypesController> _logger;
@@ -18,42 +17,27 @@ public class ExerciseTypesController : ControllerBase
     public ExerciseTypesController(
         ExerciseTypesRepository exerciseTypeRepository,
         CurrentUserProvider userProvider,
-        TrainingAccessService trainingAccessService,
         UsersRepository usersRepository,
         MuscleRepository muscleRepository,
         ILogger<ExerciseTypesController> logger)
     {
         _exerciseTypeRepository = exerciseTypeRepository;
         _userProvider = userProvider;
-        _trainingAccessService = trainingAccessService;
         _usersRepository = usersRepository;
         _muscleRepository = muscleRepository;
         _logger = logger;
     }
 
     [HttpGet]
+    [TraineeAccess("userId")]
     public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes(bool? favourite, string userId = "")
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
-            {
-                return Unauthorized();
-            }
-
-            var resolvedUserId = string.IsNullOrWhiteSpace(userId)
-                ? requesterUserId
-                : userId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    resolvedUserId))
-            {
-                return Forbid();
-            }
+            // TraineeAccess validated and rewrote userId with the resolved target id.
             var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
             var response = domainExerciseTypes
-                .Select(exerciseType => MapExerciseType(exerciseType, resolvedUserId, includeVariations: true))
+                .Select(exerciseType => MapExerciseType(exerciseType, userId, includeVariations: true))
                 .ToList();
 
             if (favourite is not null)
@@ -70,27 +54,13 @@ public class ExerciseTypesController : ControllerBase
     }
 
     [HttpGet("trained")]
+    [TraineeAccess("userId")]
     public ActionResult<List<GetExerciseTypeResource>> GetTrainedExerciseTypes(string userId = "")
     {
         try
         {
-            var requesterUserId = _userProvider.GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(requesterUserId))
-            {
-                return Unauthorized();
-            }
-
-            var resolvedUserId = string.IsNullOrWhiteSpace(userId)
-                ? requesterUserId
-                : userId;
-            if (!_trainingAccessService.CanAccessUser(
-                    requesterUserId,
-                    resolvedUserId))
-            {
-                return Forbid();
-            }
-
-            var trainedTypeIds = _exerciseTypeRepository.GetTrainedExerciseTypeIds(resolvedUserId);
+            // TraineeAccess validated and rewrote userId with the resolved target id.
+            var trainedTypeIds = _exerciseTypeRepository.GetTrainedExerciseTypeIds(userId);
             var allExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
 
             // A family (main type + its variations) counts as trained when the user
@@ -106,7 +76,7 @@ public class ExerciseTypesController : ControllerBase
 
             var response = allExerciseTypes
                 .Where(exerciseType => trainedRootIds.Contains(exerciseType.ParentExerciseTypeId ?? exerciseType.Id))
-                .Select(exerciseType => MapExerciseType(exerciseType, resolvedUserId, includeVariations: true))
+                .Select(exerciseType => MapExerciseType(exerciseType, userId, includeVariations: true))
                 .ToList();
 
             return Ok(response);
