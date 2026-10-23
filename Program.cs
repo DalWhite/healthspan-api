@@ -27,6 +27,7 @@ builder.Services.Configure<FileSystemDocumentStorageSettings>(builder.Configurat
 builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configuration);
 builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
 builder.Services.Configure<healthspan_api.Options.SponsoredOffersSettings>(builder.Configuration);
+builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection(StripeSettings.SectionName));
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -141,6 +142,8 @@ builder.Services.AddScoped<RoutineAdherenceService>();
 builder.Services.AddScoped<HealthProfileService>();
 builder.Services.AddScoped<TrainingAccessService>();
 builder.Services.AddScoped<SyncService>();
+builder.Services.AddHttpClient<IBillingGateway, StripeBillingGateway>();
+builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<BloodAnalyticsService>();
 builder.Services.AddSingleton<BloodTestProcessingChannel>();
 builder.Services.AddHostedService<BloodTestProcessingWorker>();
@@ -228,6 +231,9 @@ await using (var scope = app.Services.CreateAsyncScope())
         // a heuristic mapping only for exercise types that have none yet.
         await AdaptationCatalogSeeder.UpsertAsync(db);
         await AdaptationCatalogSeeder.BackfillExerciseTypeAdaptationsAsync(db);
+
+        // Healthspan Premium plans (billing MVP, t_c0e8a770).
+        await BillingPlanSeeder.UpsertAsync(db);
     }
     catch (Exception ex)
     {
