@@ -90,8 +90,11 @@ public sealed class TraineeAccessFilter : IAsyncActionFilter
             return;
         }
 
-        if (parameterName is not null && context.ActionArguments.ContainsKey(parameterName))
+        if (parameterName is not null)
         {
+            // Inject or overwrite: an optional parameter that was not supplied is
+            // absent from ActionArguments (its C# default is applied at call time),
+            // so the resolved id must be added for the action to trust its parameter.
             context.ActionArguments[parameterName] = targetUserId;
         }
 
@@ -109,6 +112,17 @@ public sealed class TraineeAccessFilter : IAsyncActionFilter
             if (context.ActionArguments.TryGetValue(name, out var value))
             {
                 return (name, value as string);
+            }
+        }
+
+        // Declared but not bound (optional parameter with a default value):
+        // remember the name so the resolved id can be injected.
+        foreach (var name in candidateNames)
+        {
+            if ((context.ActionDescriptor.Parameters ?? [])
+                .Any(parameter => parameter.Name == name))
+            {
+                return (name, null);
             }
         }
 

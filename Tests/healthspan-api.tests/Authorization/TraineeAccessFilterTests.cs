@@ -72,7 +72,8 @@ public class TraineeAccessFilterTests
     private static Scenario CreateFilterScenario(
         string? authenticatedUserId,
         Dictionary<string, object?> actionArguments,
-        string? filterParameterName = null)
+        string? filterParameterName = null,
+        string[]? declaredParameterNames = null)
     {
         // NOTE: HttpContextAccessor.HttpContext is backed by a static AsyncLocal holder,
         // so one scenario must use a single CurrentUserProvider for both the filter and
@@ -94,7 +95,19 @@ public class TraineeAccessFilterTests
             ? new TraineeAccessFilter(userProvider, accessService)
             : new TraineeAccessFilter(filterParameterName, userProvider, accessService);
 
-        var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor descriptor = new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor();
+        if (declaredParameterNames is not null)
+        {
+            descriptor.Parameters = declaredParameterNames
+                .Select(name => (Microsoft.AspNetCore.Mvc.Abstractions.ParameterDescriptor)new Microsoft.AspNetCore.Mvc.Controllers.ControllerParameterDescriptor
+                {
+                    Name = name,
+                    ParameterType = typeof(string)
+                })
+                .ToList();
+        }
+
+        var actionContext = new ActionContext(httpContext, new Microsoft.AspNetCore.Routing.RouteData(), descriptor);
         var executingContext = new ActionExecutingContext(actionContext, [filter], actionArguments, controller: null);
 
         var scenario = new Scenario
@@ -266,6 +279,24 @@ public class TraineeAccessFilterTests
 
         scenario.Context.Result.Should().BeOfType<UnauthorizedResult>();
         scenario.NextWasCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Filter_InjectsResolvedTrainer_WhenOptionalParameterDeclaredButNotBound()
+    {
+        // MVC omits optional parameters that were not supplied from ActionArguments
+        // (the C# default is applied at call time). The filter must still inject the
+        // resolved id so the action never sees the raw default value.
+        var scenario = CreateFilterScenario(
+            TrainerId,
+            new Dictionary<string, object?> { ["id"] = Guid.NewGuid() },
+            declaredParameterNames: ["id", "userId"]);
+
+        await scenario.RunAsync();
+
+        scenario.Context.Result.Should().BeNull();
+        scenario.NextWasCalled.Should().BeTrue();
+        scenario.Context.ActionArguments["userId"].Should().Be(TrainerId);
     }
 
     [Fact]

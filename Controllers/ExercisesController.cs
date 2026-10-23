@@ -14,22 +14,19 @@ public class ExercisesController : ControllerBase
     private readonly WorkoutsRepository _workoutsRepository;
     private readonly ExerciseTypesRepository _exerciseTypesRepository;
     private readonly ExerciseMetricsService _exercisesService;
-    private readonly CurrentUserProvider _userProvider;
-    private readonly TrainingAccessService _trainingAccessService;
     private readonly ILogger<ExercisesController> _logger;
 
-    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, CurrentUserProvider userProvider, TrainingAccessService trainingAccessService, ILogger<ExercisesController> logger)
+    public ExercisesController(ExercisesRepository exerciseRepository, WorkoutsRepository workoutsRepository, ExerciseTypesRepository exerciseTypesRepository, ExerciseMetricsService exercisesService, ILogger<ExercisesController> logger)
     {
         _exerciseRepository = exerciseRepository;
         _workoutsRepository = workoutsRepository;
         _exerciseTypesRepository = exerciseTypesRepository;
         _exercisesService = exercisesService;
-        _userProvider = userProvider;
-        _trainingAccessService = trainingAccessService;
         _logger = logger;
     }
 
     [HttpGet]
+    [TraineeAccess]
     public ActionResult<object> GetExercises(
         int? exerciseTypeId,
         string userId = "",
@@ -42,14 +39,6 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             if (page.HasValue != pageSize.HasValue)
             {
                 return Problem(
@@ -139,6 +128,7 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpPost]
+    [TraineeAccess]
     public async Task<IActionResult> AddExercise(
         AddExerciseResource exerciseResource,
         string userId = "",
@@ -146,14 +136,6 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var workout = await _workoutsRepository
                 .GetWorkoutSessionAsync(
                     exerciseResource.WorkoutId,
@@ -187,20 +169,13 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [TraineeAccess]
     public ActionResult<GetExerciseResource> GetExercise(
         Guid id,
         string userId = "")
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var domainExercise = _exerciseRepository.GetExercise(id, userId);
             if (domainExercise is not null)
             {
@@ -218,20 +193,13 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [TraineeAccess]
     public IActionResult DeleteExercise(
         Guid id,
         string userId = "")
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             if (!_exerciseRepository.DeleteExercise(id, userId))
             {
                 return Problem(
@@ -248,18 +216,11 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{id}/metrics")]
+    [TraineeAccess]
     public ActionResult<GetExerciseMetrics> GetExerciseMetrics(Guid id, string userId = "")
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var domainExercise = _exerciseRepository.GetExercise(id, userId);
             if (domainExercise is null)
             {
@@ -278,20 +239,13 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpPut]
+    [TraineeAccess]
     public ActionResult<GetExerciseResource> UpdateExercise(
         UpdateExerciseResource exerciseResource,
         string userId = "")
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var result = _exerciseRepository.UpdateExercise(
                 new ExerciseUpdateCommand(
                     exerciseResource.Id,
@@ -338,6 +292,7 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{exerciseTypeId}/kpis")]
+    [TraineeAccess]
     public ActionResult<GetExerciseTypeResource> GetExerciseTypeKpis(
         int exerciseTypeId,
         string userId = "",
@@ -345,14 +300,6 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var exerciseTypeKpis = _exercisesService.GetExerciseTypeKpisOfUser(
                 exerciseTypeId,
                 userId,
@@ -373,6 +320,7 @@ public class ExercisesController : ControllerBase
     }
 
     [HttpGet("{exerciseTypeId}/trends")]
+    [TraineeAccess]
     public ActionResult<GetExerciseTypeResource> GetExerciseTypetrends(
         int exerciseTypeId,
         TrendKpiType type,
@@ -381,14 +329,6 @@ public class ExercisesController : ControllerBase
     {
         try
         {
-            var accessError = ResolveAccessibleUserId(
-                userId,
-                out userId);
-            if (accessError is not null)
-            {
-                return accessError;
-            }
-
             var exerciseTypeTrends = _exercisesService
                 .GetExerciseTypeTrendsOfUser(
                     exerciseTypeId,
@@ -408,27 +348,6 @@ public class ExercisesController : ControllerBase
         {
             return Unexpected($"Failed to load trends for exercise type {exerciseTypeId}.", ex);
         }
-    }
-
-    private ActionResult ResolveAccessibleUserId(
-        string requestedUserId,
-        out string targetUserId)
-    {
-        var requesterUserId = _userProvider.GetCurrentUserId();
-        targetUserId = string.IsNullOrWhiteSpace(requestedUserId)
-            ? requesterUserId
-            : requestedUserId;
-
-        if (string.IsNullOrWhiteSpace(requesterUserId))
-        {
-            return Unauthorized();
-        }
-
-        return _trainingAccessService.CanAccessUser(
-            requesterUserId,
-            targetUserId)
-                ? null
-                : Forbid();
     }
 
     private static HashSet<MuscleGroup> ParseMuscleGroups(IEnumerable<string> muscleGroups)
