@@ -64,7 +64,8 @@ public sealed record ParsedGatewayEvent(
     GatewaySubscriptionSnapshot? Subscription,
     string? SessionId = null,
     string? MetadataUserId = null,
-    string? MetadataPlanSlug = null);
+    string? MetadataPlanSlug = null,
+    string? GatewayCustomerId = null);
 
 /// <summary>Signature verification failed or the event was malformed.</summary>
 public class GatewayWebhookException : Exception

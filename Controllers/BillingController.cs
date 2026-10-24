@@ -81,6 +81,14 @@ public class BillingController : ControllerBase
         {
             return ApiProblemResult.NotFound("plan_not_found", ex.Message);
         }
+        catch (IdempotencyConflictException ex)
+        {
+            return ApiProblemResult.Conflict("idempotency_conflict", ex.Message);
+        }
+        catch (ActiveSubscriptionException ex)
+        {
+            return ApiProblemResult.Conflict("subscription_active", ex.Message);
+        }
         catch (BillingConfigurationException)
         {
             return BillingNotConfigured();
@@ -108,9 +116,9 @@ public class BillingController : ControllerBase
 
             if (subscription is null)
             {
-                return ApiProblemResult.NotFound(
-                    "subscription_not_found",
-                    "This account has no Premium subscription yet.");
+                // QA-B6 (spec §30): a free account is a normal state, not an error.
+                // TrialBanner/EmptyState build the screen from status "none".
+                return Ok(new SubscriptionResource { Status = "none" });
             }
 
             return Ok(MapSubscription(subscription));
@@ -231,12 +239,32 @@ public class BillingController : ControllerBase
         }
     }
 
+    /// <summary>API status strings follow Stripe's own snake_case vocabulary
+    /// (past_due, incomplete_expired) so the FE can mirror gateway states 1:1.</summary>
+    private static string ToApiStatus(SubscriptionStatus status) => status switch
+    {
+        SubscriptionStatus.Incomplete => "incomplete",
+        SubscriptionStatus.IncompleteExpired => "incomplete_expired",
+        SubscriptionStatus.Trialing => "trialing",
+        SubscriptionStatus.Active => "active",
+        SubscriptionStatus.PastDue => "past_due",
+        SubscriptionStatus.Canceled => "canceled",
+        SubscriptionStatus.Unpaid => "unpaid",
+        SubscriptionStatus.Paused => "paused",
+        _ => status.ToString().ToLowerInvariant(),
+    };
+
     private static SubscriptionResource MapSubscription(Subscription subscription) => new()
     {
-        Status = subscription.Status.ToString().ToLowerInvariant(),
+        Status = ToApiStatus(subscription.Status),
         Plan = subscription.PlanSlug,
         CurrentPeriodEnd = subscription.CurrentPeriodEnd,
         CancelAtPeriodEnd = subscription.CancelAtPeriodEnd,
+        // QA-B13: TrialBanner needs "Prueba Premium · termina el {fecha}" / "Día X de 7".
+        // During the trial the period end IS the trial end.
+        TrialEnd = subscription.Status == SubscriptionStatus.Trialing ? subscription.CurrentPeriodEnd : null,
+        // QA-B4: expose the refund so the FE can show why access was revoked.
+        Refunded = subscription.Refunded,
     };
 
     private ObjectResult BillingNotConfigured() => new(new ProblemDetails
@@ -276,6 +304,8 @@ public class SubscriptionResource
     public string Plan { get; set; } = string.Empty;
     public DateTime? CurrentPeriodEnd { get; set; }
     public bool CancelAtPeriodEnd { get; set; }
+    public DateTime? TrialEnd { get; set; }
+    public bool Refunded { get; set; }
 }
 
 public class ReceiptResource

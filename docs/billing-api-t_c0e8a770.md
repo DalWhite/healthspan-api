@@ -32,10 +32,20 @@ Body: `{ "plan": "premium-monthly" }`
 - `400 idempotency_key_required` — missing header.
 - `400 plan_required` — missing body field.
 - `404 plan_not_found` — unknown slug.
+- `409 idempotency_conflict` — the key was already used with a different plan
+  (QA-B2: a replayed key never silently returns a session for another plan).
+- `409 subscription_active` — the account already has a live subscription
+  (`trialing`/`active`/`past_due`). Cancel it first; in-app plan switching is
+  Fase 2 (QA-B3, product decision: no orphaned Stripe subscriptions).
 - `503 billing_not_configured` — Stripe key not set up.
 
-Idempotency: replaying the same `Idempotency-Key` (per user) returns the stored
-session and never calls Stripe twice.
+Idempotency: replaying the same `Idempotency-Key` (per user) with the same plan
+returns the stored session and never calls Stripe twice.
+
+Trial (QA-B9, product decision): 7 days with the card collected upfront —
+Stripe hosted checkout cannot start a subscription trial without a payment
+method. Canonical FE copy: "7 días gratis, luego se cobra automáticamente.
+Cancela cuando quieras."
 
 ### POST /api/billing/webhook/stripe
 Auth: none (Stripe calls it). Header `Stripe-Signature: t=...,v1=...` verified
@@ -44,16 +54,28 @@ with HMAC-SHA256 against `WebhookSigningSecret` (constant-time, 300 s tolerance)
 Handled events (idempotent by event id — Stripe retries are deduped):
 - `checkout.session.completed` → creates local subscription mirror + customer link.
 - `customer.subscription.updated` → mirrors status / period end / cancel flag.
-- `customer.subscription.deleted` → marks `canceled`.
+- `customer.subscription.deleted` → marks `canceled` (the only event that may
+  cancel the mirror; a gateway lookup miss never mutates local state — QA-B14).
+- `charge.refunded` → mirror to `canceled` + `refunded: true` (QA-B4: Premium
+  is revoked when the charge is refunded).
+- `invoice.payment_failed` → mirror to `past_due` (QA-B5: recoverable; Stripe
+  retries and a later `customer.subscription.updated` mirrors the outcome).
 
 Responses: `200 { received: true, outcome: "processed" | "duplicate" | "ignored" }`,
 `400 invalid_webhook_signature` (bad/missing/tampered signature).
 
 ### GET /api/billing/subscription
-- `200` → `{ plan, status, currentPeriodEnd, cancelAtPeriodEnd }`
-- `404 subscription_not_found`
+- `200` → `{ plan, status, currentPeriodEnd, cancelAtPeriodEnd, trialEnd, refunded }`
+  - `status` uses Stripe's snake_case vocabulary: `none` (free account — a
+    normal state, never 404; QA-B6), `incomplete`, `trialing`, `active`,
+    `past_due`, `canceled`, …
+  - `trialEnd` is set only while `status = "trialing"` (TrialBanner: "Prueba
+    Premium · termina el {fecha}", QA-B13).
+  - `refunded: true` when access was revoked by a `charge.refunded` (QA-B4).
 
-Refreshes from the gateway when the local copy is stale (>60 s).
+Refreshes from the gateway when the local copy is stale (>60 s). A gateway
+lookup miss is logged and served from the local mirror without mutation
+(QA-B14).
 
 ### POST /api/billing/subscription/cancel
 Cancel-at-period-end (access kept until `currentPeriodEnd`). No body.
@@ -68,10 +90,13 @@ Cancel-at-period-end (access kept until `currentPeriodEnd`). No body.
 ### Trainer payment links (Stripe-hosted only)
 - `PUT /api/trainers/me/payment-link` — body `{ "url": "https://..." }`
   - `200` → `{ url, verifiedDomain, updatedAt }`
+  - `204` — empty/whitespace `url` removes the published link (QA-B7, spec B3;
+    same effect as DELETE).
   - `400 payment_link_not_allowed` — anything that is not https on
     `checkout.stripe.com`, `buy.stripe.com`, `paypal.me`, `paypal.com`
     (lookalike domains, ports, credentials-in-URL and non-allowlisted hosts
     are rejected).
+  - `404 payment_link_not_found` — empty `url` when no link was published.
 - `GET /api/trainers/me/payment-link` → `200` DTO or `404 payment_link_not_found`
 - `DELETE /api/trainers/me/payment-link` → `204`
 - `GET /api/trainers/{trainerId}/payment-link` → public read for trainees:

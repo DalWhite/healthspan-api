@@ -25,6 +25,15 @@ internal static class ApiProblemResult
             "The requested health record was not found.",
             detail);
 
+    public static ObjectResult Conflict(
+        string code,
+        string detail)
+        => Create(
+            StatusCodes.Status409Conflict,
+            code,
+            "The request conflicts with the current state.",
+            detail);
+
     public static ObjectResult Unexpected(string code)
         => Create(
             StatusCodes.Status500InternalServerError,

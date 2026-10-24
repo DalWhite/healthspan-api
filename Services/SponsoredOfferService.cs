@@ -191,8 +191,9 @@ public class SponsoredOfferService
 
     private bool IsDomainAllowed(string externalUrl)
     {
+        // QA-S1: sponsored affiliate links are only ever served over TLS.
         if (!Uri.TryCreate(externalUrl, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            || uri.Scheme != Uri.UriSchemeHttps)
         {
             return false;
         }
