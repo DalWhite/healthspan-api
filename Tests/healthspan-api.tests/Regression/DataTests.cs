@@ -72,6 +72,60 @@ public class DataTests : ApiTestBase
     }
 
     [Fact]
+    public async Task ImportCsv_Semicolon_Separator_Returns_BadRequest_With_Template_Hint()
+    {
+        const string csv =
+            "Date;ExerciseType;Series;Reps;Weight;AdditionalComments\n" +
+            "01/06/25;Bench Press;4;10;80;Semicolon row";
+
+        var response = await Client.PostAsync("/data/import", BuildCsvContent(csv));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("/data/import/template");
+
+        // The hinted template really is downloadable.
+        var template = await Client.GetAsync("/data/import/template");
+        template.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ImportCsv_Semicolon_Separator_With_Utf8_Bom_Returns_BadRequest_With_Template_Hint()
+    {
+        var content = new MultipartFormDataContent();
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF }
+            .Concat(Encoding.UTF8.GetBytes(
+                "Date;ExerciseType;Series\r\n01/06/25;Bench Press;4"))
+            .ToArray();
+        var fileContent = new ByteArrayContent(bytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        content.Add(fileContent, "file", "import.csv");
+
+        var response = await Client.PostAsync("/data/import", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("/data/import/template");
+    }
+
+    [Fact]
+    public async Task ImportCsv_Comma_Separator_With_Utf8_Bom_Still_Imports()
+    {
+        var content = new MultipartFormDataContent();
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF }
+            .Concat(Encoding.UTF8.GetBytes(
+                "Date,ExerciseType,Series,Reps,Weight,AdditionalComments\n" +
+                "01/06/49,Bench Press,4,10,80,Bom comma row"))
+            .ToArray();
+        var fileContent = new ByteArrayContent(bytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        content.Add(fileContent, "file", "import.csv");
+
+        var response = await Client.PostAsync("/data/import", content);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    [Fact]
     public async Task ImportCsv_Returns_202_With_JobId_And_Completes()
     {
         const string csv =
