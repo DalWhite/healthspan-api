@@ -27,6 +27,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<Adaptation> Adaptations { get; set; }
     public DbSet<ExerciseTypeAdaptation> ExerciseTypeAdaptations { get; set; }
     public DbSet<ExerciseAdaptation> ExerciseAdaptations { get; set; }
+    public DbSet<ImportJobRecord> ImportJobRecords { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
@@ -390,6 +391,20 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         builder.Entity<ExerciseAdaptation>()
             .HasIndex(adaptation => new { adaptation.ExerciseId, adaptation.AdaptationId })
             .IsUnique();
+
+        // Import job snapshots (t_e26d8b7d): no query filter on purpose — the
+        // background pipeline has no HttpContext, and the lookup path filters
+        // by UserId explicitly (CsvImportJobService.FindAsync).
+        builder.Entity<ImportJobRecord>(entity =>
+        {
+            entity.HasKey(entry => entry.Id);
+            entity.Property(entry => entry.Id).HasMaxLength(32).ValueGeneratedNever();
+            entity.Property(entry => entry.UserId).HasMaxLength(450);
+            entity.Property(entry => entry.Status).HasMaxLength(32);
+            entity.Property(entry => entry.FailureReason).HasMaxLength(2000);
+            entity.Property(entry => entry.ErrorsJson).HasColumnType("longtext");
+            entity.HasIndex(entry => entry.UserId);
+        });
 
         base.OnModelCreating(builder);
     }
