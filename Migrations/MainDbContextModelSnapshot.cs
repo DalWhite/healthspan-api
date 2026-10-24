@@ -92,38 +92,6 @@ namespace healthspan_api.Migrations
                     b.ToTable("AnalyticsPermissions");
                 });
 
-            modelBuilder.Entity("BillingEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("GatewayEventId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("PayloadHash")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime>("ProcessedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UserId")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GatewayEventId")
-                        .IsUnique();
-
-                    b.ToTable("BillingEvents");
-                });
-
             modelBuilder.Entity("BloodTest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -240,43 +208,6 @@ namespace healthspan_api.Migrations
                     b.HasIndex("BloodTestId", "MetricKey");
 
                     b.ToTable("BloodTestMarkerResults");
-                });
-
-            modelBuilder.Entity("CheckoutSessionRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("CheckoutUrl")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("PlanSlug")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("SessionId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.ToTable("CheckoutSessionRequests");
                 });
 
             modelBuilder.Entity("Exercise", b =>
@@ -740,44 +671,29 @@ namespace healthspan_api.Migrations
                     b.ToTable("Muscles");
                 });
 
-            modelBuilder.Entity("Plan", b =>
+            modelBuilder.Entity("RecommendationDelivery", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("bigint");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<bool>("Active")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("OccurredAtUtc")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("Interval")
+                    b.Property<int>("SuggestionCount")
                         .HasColumnType("int");
 
-                    b.Property<int>("PriceCents")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Slug")
+                    b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("varchar(255)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Slug")
-                        .IsUnique();
+                    b.HasIndex("UserId", "OccurredAtUtc");
 
-                    b.ToTable("Plans");
+                    b.ToTable("RecommendationDeliveries");
                 });
 
             modelBuilder.Entity("ReferenceRange", b =>
@@ -894,40 +810,23 @@ namespace healthspan_api.Migrations
                     b.ToTable("RoutineWorkoutTemplate");
                 });
 
-            modelBuilder.Entity("Subscription", b =>
+            modelBuilder.Entity("SponsoredEvent", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("bigint");
 
-                    b.Property<bool>("CancelAtPeriodEnd")
-                        .HasColumnType("tinyint(1)");
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime?>("CurrentPeriodEnd")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("GatewayCustomerId")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("GatewaySubscriptionId")
+                    b.Property<string>("EventType")
                         .IsRequired()
                         .HasColumnType("varchar(255)");
 
-                    b.Property<int?>("PlanId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PlanSlug")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime>("OccurredAtUtc")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<int>("OfferId")
+                        .HasColumnType("int");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -935,15 +834,57 @@ namespace healthspan_api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GatewaySubscriptionId")
+                    b.HasIndex("OfferId");
+
+                    b.HasIndex("UserId", "EventType", "OccurredAtUtc");
+
+                    b.ToTable("SponsoredEvents");
+                });
+
+            modelBuilder.Entity("SponsoredOffer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("ExternalUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.HasIndex("PlanId");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("Subscriptions");
+                    b.ToTable("SponsoredOffers");
                 });
 
             modelBuilder.Entity("SyncOperation", b =>
@@ -979,35 +920,6 @@ namespace healthspan_api.Migrations
                         .IsUnique();
 
                     b.ToTable("SyncOperations");
-                });
-
-            modelBuilder.Entity("TrainerPaymentLink", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("VerifiedDomain")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("TrainerPaymentLinks");
                 });
 
             modelBuilder.Entity("User", b =>
@@ -1098,6 +1010,62 @@ namespace healthspan_api.Migrations
                     b.HasIndex("TrainerId");
 
                     b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("WellnessActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("Cycles")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Dimension")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FrequencyPerWeek")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<decimal?>("Intensity")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("json");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<DateTime>("OccurredOnUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<decimal?>("TemperatureCelsius")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OccurredOnUtc");
+
+                    b.HasIndex("UserId", "Type");
+
+                    b.ToTable("WellnessActivities");
                 });
 
             modelBuilder.Entity("Workout", b =>
@@ -1295,17 +1263,6 @@ namespace healthspan_api.Migrations
                         .IsRequired();
 
                     b.Navigation("BloodTest");
-                });
-
-            modelBuilder.Entity("CheckoutSessionRequest", b =>
-                {
-                    b.HasOne("User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Exercise", b =>
@@ -1543,32 +1500,15 @@ namespace healthspan_api.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Subscription", b =>
+            modelBuilder.Entity("SponsoredEvent", b =>
                 {
-                    b.HasOne("Plan", "Plan")
-                        .WithMany()
-                        .HasForeignKey("PlanId");
-
-                    b.HasOne("User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
+                    b.HasOne("SponsoredOffer", "Offer")
+                        .WithMany("Events")
+                        .HasForeignKey("OfferId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Plan");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("TrainerPaymentLink", b =>
-                {
-                    b.HasOne("User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
+                    b.Navigation("Offer");
                 });
 
             modelBuilder.Entity("User", b =>
@@ -1578,6 +1518,17 @@ namespace healthspan_api.Migrations
                         .HasForeignKey("TrainerId");
 
                     b.Navigation("Trainer");
+                });
+
+            modelBuilder.Entity("WellnessActivity", b =>
+                {
+                    b.HasOne("User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Workout", b =>
@@ -1663,6 +1614,11 @@ namespace healthspan_api.Migrations
             modelBuilder.Entity("Routine", b =>
                 {
                     b.Navigation("Workouts");
+                });
+
+            modelBuilder.Entity("SponsoredOffer", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("User", b =>

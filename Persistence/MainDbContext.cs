@@ -23,6 +23,10 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<GalpinAssessment> GalpinAssessments { get; set; }
     public DbSet<GalpinAssessmentScore> GalpinAssessmentScores { get; set; }
     public DbSet<SyncOperation> SyncOperations { get; set; }
+    public DbSet<SponsoredOffer> SponsoredOffers { get; set; }
+    public DbSet<SponsoredEvent> SponsoredEvents { get; set; }
+    public DbSet<RecommendationDelivery> RecommendationDeliveries { get; set; }
+    public DbSet<WellnessActivity> WellnessActivities { get; set; }
     public DbSet<WorkoutBlock> WorkoutBlocks { get; set; }
     public DbSet<Adaptation> Adaptations { get; set; }
     public DbSet<ExerciseTypeAdaptation> ExerciseTypeAdaptations { get; set; }
@@ -50,6 +54,78 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         builder.Entity<GalpinAssessment>().HasQueryFilter(assessment => assessment.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<GalpinAssessmentScore>().HasQueryFilter(score => score.GalpinAssessment.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<AnalyticsPermission>().HasQueryFilter(permission => permission.OwnerUserId == _userProvider.GetCurrentUserId() || permission.ViewerUserId == _userProvider.GetCurrentUserId());
+        builder.Entity<SponsoredEvent>().HasQueryFilter(sponsoredEvent => sponsoredEvent.UserId == _userProvider.GetCurrentUserId());
+        builder.Entity<RecommendationDelivery>().HasQueryFilter(delivery => delivery.UserId == _userProvider.GetCurrentUserId());
+
+        builder.Entity<SponsoredOffer>()
+            .Property(offer => offer.Slug)
+            .HasMaxLength(64);
+
+        builder.Entity<SponsoredOffer>()
+            .HasIndex(offer => offer.Slug)
+            .IsUnique();
+
+        builder.Entity<SponsoredOffer>()
+            .Property(offer => offer.DisplayName)
+            .HasMaxLength(120);
+
+        builder.Entity<SponsoredOffer>()
+            .Property(offer => offer.Description)
+            .HasMaxLength(500);
+
+        builder.Entity<SponsoredOffer>()
+            .Property(offer => offer.ExternalUrl)
+            .HasMaxLength(500);
+
+        builder.Entity<SponsoredOffer>()
+            .Property(offer => offer.Category)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(SponsoredOfferCategory)));
+
+        builder.Entity<SponsoredEvent>()
+            .Property(sponsoredEvent => sponsoredEvent.EventType)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(SponsoredEventType)));
+
+        builder.Entity<SponsoredEvent>()
+            .HasIndex(sponsoredEvent => new { sponsoredEvent.UserId, sponsoredEvent.EventType, sponsoredEvent.OccurredAtUtc });
+
+        builder.Entity<RecommendationDelivery>()
+            .HasIndex(delivery => new { delivery.UserId, delivery.OccurredAtUtc });
+
+        builder.Entity<WellnessActivity>().HasQueryFilter(activity => activity.UserId == _userProvider.GetCurrentUserId());
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Type)
+            .HasMaxLength(64);
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Dimension)
+            .HasConversion(
+                value => value.ToString(),
+                value => ParseEnumOrDefault(value, default(WellnessDimension)));
+
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Notes)
+            .HasMaxLength(2000);
+
+        // Per-type flexible parameters stored as a JSON column (JSONB on MySQL).
+        builder.Entity<WellnessActivity>()
+            .Property(activity => activity.Metadata)
+            .HasConversion(
+                value => value == null ? null : JsonSerializer.Serialize(value, (JsonSerializerOptions?)null),
+                value => string.IsNullOrEmpty(value)
+                    ? null
+                    : JsonSerializer.Deserialize<Dictionary<string, object?>>(value, (JsonSerializerOptions?)null))
+            .HasColumnType("json");
+
+        builder.Entity<WellnessActivity>()
+            .HasIndex(activity => new { activity.UserId, activity.OccurredOnUtc });
+
+        builder.Entity<WellnessActivity>()
+            .HasIndex(activity => new { activity.UserId, activity.Type });
 
         // Billing: personal data stays scoped to `me`. BillingEvents and
         // TrainerPaymentLinks have no filter on purpose — events are processed
