@@ -73,12 +73,14 @@ public static class StripeWebhookVerifier
 
         var signedPayload = $"{timestamp}.{payload}";
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(signingSecret));
-        var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload)));
+        // Stripe emits v1 signatures as lowercase hex (docs.stripe.com/webhooks#verify-manually);
+        // normalize both sides to lowercase so the byte comparison is case-insensitive.
+        var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(signedPayload))).ToLowerInvariant();
 
         var matches = candidateSignatures.Any(candidate =>
             CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(expected),
-                Encoding.UTF8.GetBytes(candidate)));
+                Encoding.UTF8.GetBytes(candidate.ToLowerInvariant())));
 
         if (!matches)
         {

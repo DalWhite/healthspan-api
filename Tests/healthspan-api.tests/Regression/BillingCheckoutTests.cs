@@ -241,6 +241,57 @@ public class BillingSubscriptionWebhookTests : ApiTestBase
 }
 
 /// <summary>
+/// QA-B1 regression (t_c95d1623): a real Stripe webhook sends v1 as lowercase hex.
+/// Before the fix the endpoint answered 400 invalid_webhook_signature for every genuine
+/// Stripe delivery, so Premium would never activate in production.
+/// Own fixture (own database) so the processed event cannot pollute the full-flow fixture.
+/// </summary>
+public class BillingWebhookSignatureTests : ApiTestBase
+{
+    public BillingWebhookSignatureTests(HealthspanApiFactory factory) : base(factory) { }
+
+    [Fact]
+    public async Task Webhook_StripeStyleLowercaseHexSignature_IsAccepted()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            id = "evt_b1_lower_1",
+            type = "checkout.session.completed",
+            data = new
+            {
+                @object = new
+                {
+                    id = "cs_b1_lower_1",
+                    subscription = "sub_b1_lower_1",
+                    customer = "cus_b1_lower_1",
+                    metadata = new
+                    {
+                        userId = HealthspanApiFactory.TestUserId,
+                        planSlug = "premium-monthly",
+                    },
+                },
+            },
+        });
+
+        var signature = FakeBillingGateway.Sign(payload);
+        signature.Should().MatchRegex(@"^t=\d+,v1=[0-9a-f]{64}$", "the fake gateway signs the way Stripe signs");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/billing/webhook/stripe")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.TryAddWithoutValidation("Stripe-Signature", signature);
+
+        var response = await Client.SendAsync(request);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            $"a real Stripe webhook (lowercase v1 hex) must not be rejected (got: {body})");
+        body.RootElement.GetProperty("outcome").GetString().Should().Be("processed");
+    }
+}
+
+/// <summary>
 /// Separate fixture (own database) so "no subscription yet" assertions cannot be
 /// polluted by the full-flow test's ordering.
 /// </summary>
