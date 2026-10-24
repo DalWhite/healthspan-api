@@ -352,12 +352,68 @@ public class WorkoutsRepository
     /// (t_c1f8e6ac): one range query for every date of the job, one insert
     /// batch for the missing daily sessions, instead of a Serializable
     /// transaction per date. Returns the workout id per date.
+    ///
+    /// Concurrency (t_633ebd61): two imports of the same user can compute the
+    /// same DailySessionKeys at the same time. The loser's insert fails on
+    /// IX_Workouts_DailySessionKey; the winner commits its sessions before its
+    /// batch loop starts, so a single retry resolves every date with a plain
+    /// range SELECT and an empty insert batch. The locked, serializable
+    /// per-date path is kept as a last resort only: running it per date while
+    /// the winner's batch transaction is still open deadlocks on gap locks
+    /// (QA probe t_79d39b1e: 3/3 rounds).
     /// </summary>
     public async Task<Dictionary<DateOnly, Guid>> GetOrCreateWorkoutSessionsBulkAsync(
         string userId,
         IReadOnlyCollection<DateOnly> dates,
         string type,
         CancellationToken cancellationToken = default)
+    {
+        if (dates.Count == 0)
+        {
+            return new Dictionary<DateOnly, Guid>();
+        }
+
+        try
+        {
+            return await TryGetOrCreateWorkoutSessionsBulkAsync(
+                userId, dates, type, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            _context.ChangeTracker.Clear();
+        }
+
+        try
+        {
+            // The concurrent import won and has committed its sessions by
+            // now: the range SELECT resolves every date and no insert races.
+            return await TryGetOrCreateWorkoutSessionsBulkAsync(
+                userId, dates, type, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            _context.ChangeTracker.Clear();
+        }
+
+        // Last resort: the locked, serializable per-date path.
+        var fallbackResult = new Dictionary<DateOnly, Guid>();
+        foreach (var date in dates.Distinct().OrderBy(date => date))
+        {
+            var (workout, _) = await GetOrCreateWorkoutSessionAsync(
+                userId,
+                date,
+                type,
+                cancellationToken);
+            fallbackResult[date] = workout.Id;
+        }
+        return fallbackResult;
+    }
+
+    private async Task<Dictionary<DateOnly, Guid>> TryGetOrCreateWorkoutSessionsBulkAsync(
+        string userId,
+        IReadOnlyCollection<DateOnly> dates,
+        string type,
+        CancellationToken cancellationToken)
     {
         var result = new Dictionary<DateOnly, Guid>();
         if (dates.Count == 0)
@@ -478,7 +534,21 @@ public class WorkoutsRepository
                     var sql =
                         "INSERT INTO Workouts (Id, Date, Type, UserId, DailySessionKey, SecondaryGoals) VALUES "
                         + string.Join(",", values);
-                    await _context.Database.ExecuteSqlRawAsync(sql, parameters, cancellationToken);
+                    try
+                    {
+                        await _context.Database.ExecuteSqlRawAsync(sql, parameters, cancellationToken);
+                    }
+                    catch (MySqlConnector.MySqlException ex)
+                    {
+                        // A concurrent import computed the same DailySessionKey
+                        // and raced us on IX_Workouts_DailySessionKey
+                        // (t_633ebd61). ExecuteSqlRawAsync throws MySqlException
+                        // directly, so surface it as DbUpdateException to
+                        // activate the serialized fallback below — same pattern
+                        // as CsvImportPipeline.InsertBatchAsync.
+                        throw new DbUpdateException(
+                            "Bulk daily-session insert raced a concurrent import", ex);
+                    }
                 }
                 else
                 {
@@ -500,21 +570,15 @@ public class WorkoutsRepository
             if (transaction is not null)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                // Detach the failed transaction before the caller retries:
+                // the retry starts a new transaction on this context, and EF
+                // refuses BeginTransaction while a (rolled-back) one is still
+                // attached.
+                await transaction.DisposeAsync();
+                transaction = null;
             }
             _context.ChangeTracker.Clear();
-
-            // A concurrent per-day creation raced us on the unique
-            // DailySessionKey: fall back to the locked, serializable path.
-            foreach (var date in sorted)
-            {
-                var (workout, _) = await GetOrCreateWorkoutSessionAsync(
-                    userId,
-                    date,
-                    type,
-                    cancellationToken);
-                result[date] = workout.Id;
-            }
-            return result;
+            throw;
         }
         finally
         {
