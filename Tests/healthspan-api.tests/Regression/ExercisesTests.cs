@@ -635,6 +635,61 @@ public class ExercisesTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Exercise_Read_Endpoints_For_Foreign_Trainee_Returns_Forbidden()
+    {
+        var foreignUserId = $"exercise-foreign-{Guid.NewGuid():N}";
+        var workoutId = Guid.NewGuid();
+        var exerciseId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
+            db.Users.Add(new User
+            {
+                Id = foreignUserId,
+                UserName = $"{foreignUserId}@healthspan.dev",
+                NormalizedUserName = $"{foreignUserId}@healthspan.dev".ToUpperInvariant(),
+                Email = $"{foreignUserId}@healthspan.dev",
+                NormalizedEmail = $"{foreignUserId}@healthspan.dev".ToUpperInvariant()
+            });
+            db.Workouts.Add(new Workout
+            {
+                Id = workoutId,
+                Date = new DateTime(2044, 3, 10),
+                Type = "Private",
+                UserId = foreignUserId,
+                Exercises =
+                [
+                    new Exercise
+                    {
+                        Id = exerciseId,
+                        TypeId = TestDataSeeder.BenchPressTypeId,
+                        Series = 3,
+                        Repetitions = 8,
+                        Weight = 70
+                    }
+                ]
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var getResponse = await Client.GetAsync(
+            $"/exercises/{exerciseId}?userId={foreignUserId}");
+        var metricsResponse = await Client.GetAsync(
+            $"/exercises/{exerciseId}/metrics?userId={foreignUserId}");
+        var kpisResponse = await Client.GetAsync(
+            $"/exercises/{TestDataSeeder.BenchPressTypeId}/kpis?userId={foreignUserId}");
+        var trendsResponse = await Client.GetAsync(
+            $"/exercises/{TestDataSeeder.BenchPressTypeId}/trends?type=RM&userId={foreignUserId}");
+
+        foreach (var response in new[] { getResponse, metricsResponse, kpisResponse, trendsResponse })
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task AddExercise_ForNoWeightType_DoesNotCreate_LoadMetrics()
     {
         var typeId = 0;
