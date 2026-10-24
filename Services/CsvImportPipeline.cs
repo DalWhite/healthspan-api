@@ -275,6 +275,15 @@ public sealed class CsvImportPipeline
                 {
                     _db.ChangeTracker.Clear();
                     var row = rowByEntity[exercise];
+                    if (IsDuplicateImportId(rowEx))
+                    {
+                        // A concurrent import of the same content won the race
+                        // on IX_Exercises_ClientEntityId (t_633ebd61): the row
+                        // is already persisted, so it counts as skipped — same
+                        // semantics as the dedupe SELECT, not an error.
+                        job.AddSkipped(1);
+                        continue;
+                    }
                     // Full exception stays in the log; the job error carries the
                     // mapped, user-safe reason (t_a4651a49).
                     _logger.LogError(
@@ -355,6 +364,11 @@ public sealed class CsvImportPipeline
 
     private static object Nullable<T>(T? value) where T : struct =>
         value.HasValue ? value.Value : (object)DBNull.Value;
+
+    private static bool IsDuplicateImportId(Exception ex) =>
+        ex is DbUpdateException dbEx
+        && dbEx.InnerException is MySqlException mysql
+        && mysql.Number == (int)MySqlErrorCode.DuplicateKeyEntry;
 
     /// <summary>
     /// Mirrors ExercisesRepository.CalculateComputedValues, but with the
