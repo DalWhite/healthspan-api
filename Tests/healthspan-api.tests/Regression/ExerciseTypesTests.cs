@@ -20,6 +20,19 @@ public class ExerciseTypesTests : ApiTestBase
             $"/exercisetypes?userId=unrelated-{Guid.NewGuid():N}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetExerciseTypes_WithAssignedTrainee_Returns_Ok()
+    {
+        var response = await Client.GetAsync(
+            $"/exercisetypes?userId={TestDataSeeder.TraineeUserId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var types = await response.Content.ReadFromJsonAsync<List<GetExerciseTypeResource>>();
+        types.Should().NotBeNull();
+        types!.Count.Should().BeGreaterThanOrEqualTo(3);
     }
 
     [Fact]
@@ -133,6 +146,18 @@ public class ExerciseTypesTests : ApiTestBase
             $"/exercisetypes/trained?userId=unrelated-{Guid.NewGuid():N}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTrainedExerciseTypes_WithAssignedTrainee_Returns_Ok()
+    {
+        var response = await Client.GetAsync(
+            $"/exercisetypes/trained?userId={TestDataSeeder.TraineeUserId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var types = await response.Content.ReadFromJsonAsync<List<GetExerciseTypeResource>>();
+        types.Should().NotBeNull();
     }
 
     [Fact]
