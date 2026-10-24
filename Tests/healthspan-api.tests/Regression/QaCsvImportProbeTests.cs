@@ -412,6 +412,27 @@ public class QaCsvImportProbeTests : IClassFixture<QaUserSwitchFactory>
     }
 
     [Fact]
+    public async Task Probe_same_user_concurrent_imports_queue_and_neither_fails()
+    {
+        // t_633ebd61: two same-user imports submitted back to back must both
+        // reach a non-failed terminal state (the second is serialized behind
+        // the first), never aborting on the DailySessionKey race.
+        var client = _factory.ClientFor(QaUserSwitchFactory.UserA);
+        var jobA = await PostJobId(client, BuildCsv(600, "Queue A"));
+        var jobB = await PostJobId(client, BuildCsv(600, "Queue B"));
+
+        var doneA = await WaitAsync(client, jobA, 60_000);
+        var doneB = await WaitAsync(client, jobB, 60_000);
+
+        doneA.GetProperty("status").GetString().Should().Be("completed");
+        doneB.GetProperty("status").GetString().Should().NotBe("failed",
+            "a concurrent same-user import must be serialized, not aborted");
+        (doneA.GetProperty("processed").GetInt32()
+            + doneB.GetProperty("processed").GetInt32())
+            .Should().Be(1_200, "both imports must land in full");
+    }
+
+    [Fact]
     public async Task Probe_missing_optional_columns_import_with_null_metrics()
     {
         var client = _factory.ClientFor(QaUserSwitchFactory.UserA);

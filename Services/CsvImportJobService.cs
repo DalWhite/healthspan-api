@@ -91,6 +91,15 @@ public sealed class CsvImportJobService
     private readonly ILogger<CsvImportJobService> _logger;
     private readonly ConcurrentDictionary<string, CsvImportJob> _jobs = new();
 
+    // t_633ebd61: one running import per user within this app instance. A
+    // second same-user submit is accepted as a "queued" job and runs after
+    // the active one finishes, instead of racing it on
+    // IX_Workouts_DailySessionKey and aborting as "failed". (Instance-scoped
+    // on purpose: separate factories/processes use separate databases, and
+    // cross-process races stay covered by the repository-level retry in
+    // GetOrCreateWorkoutSessionsBulkAsync.)
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _userGates = new();
+
     public CsvImportJobService(
         IServiceScopeFactory scopeFactory,
         ILogger<CsvImportJobService> logger)
@@ -121,6 +130,13 @@ public sealed class CsvImportJobService
 
     private async Task RunJobAsync(CsvImportJob job, List<CsvImportRow> rows)
     {
+        // t_633ebd61: same-user imports are serialized within the instance.
+        // The second submit stays "queued" while the first runs, then runs
+        // on the safe (idempotent-skip) path instead of racing the bulk
+        // session INSERT on IX_Workouts_DailySessionKey.
+        var gate = _userGates.GetOrAdd(job.UserId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+
         job.StartedAt = DateTimeOffset.UtcNow;
         job.Status = "running";
 
@@ -144,6 +160,7 @@ public sealed class CsvImportJobService
         finally
         {
             job.FinishedAt = DateTimeOffset.UtcNow;
+            gate.Release();
         }
     }
 

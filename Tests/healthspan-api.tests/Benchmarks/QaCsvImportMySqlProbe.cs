@@ -169,11 +169,25 @@ public class QaCsvImportMySqlProbe
             var csv = GenerateCsv(rows, variant);
 
             var jobA = await PostJobId(clientA, csv);
-            var jobB = await PostJobId(clientB, csv);
 
-            var both = await Task.WhenAll(
-                WaitAsync(clientA, jobA, 300_000),
-                WaitAsync(clientB, jobB, 300_000));
+            // t_633ebd61 contract (product decision: serialize per user):
+            // while an import is running for the same user, a second submit
+            // is accepted as a "queued" job that runs after the active one
+            // finishes on the idempotent-skip path — it must NOT abort as
+            // "failed" on the IX_Workouts_DailySessionKey race. An explicit
+            // 409 rejection is also an accepted outcome.
+            var responseB = await clientB.PostAsync("/data/import", BuildCsvContent(csv));
+            var bodyBRaw = await responseB.Content.ReadAsStringAsync();
+            JsonElement? jobB = null;
+            if (responseB.StatusCode == System.Net.HttpStatusCode.Accepted)
+            {
+                jobB = JsonSerializer.Deserialize<JsonElement>(bodyBRaw, JsonOptions);
+            }
+
+            var doneA = await WaitAsync(clientA, jobA, 300_000);
+            JsonElement? doneB = jobB is { } jb
+                ? await WaitAsync(clientB, jb.GetProperty("jobId").GetString()!, 300_000)
+                : null;
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
@@ -183,8 +197,10 @@ public class QaCsvImportMySqlProbe
             rounds.Add(new
             {
                 rows,
-                jobA = Summary(both[0]),
-                jobB = Summary(both[1]),
+                jobA = Summary(doneA),
+                jobB = doneB is { } bDone
+                    ? Summary(bDone)
+                    : (object)new { http = (int)responseB.StatusCode, body = bodyBRaw },
                 persisted,
                 expected = expectedTotal,
             });
@@ -193,11 +209,29 @@ public class QaCsvImportMySqlProbe
             {
                 failures.Add($"round {variant}: persisted {persisted}, expected {expectedTotal}");
             }
-            if (both[0].GetProperty("status").GetString() == "failed"
-                || both[1].GetProperty("status").GetString() == "failed")
+
+            if (responseB.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
-                failures.Add($"round {variant}: a concurrent job ended as failed -> "
-                    + $"{Summary(both[0])} | {Summary(both[1])}");
+                if (!bodyBRaw.Contains("import_in_progress"))
+                {
+                    failures.Add($"round {variant}: 409 without import_in_progress code: {bodyBRaw}");
+                }
+            }
+            else if (doneB is { } b)
+            {
+                // If a job B was created after all, it must survive to a
+                // non-failed terminal state (repository retry defense).
+                if (doneA.GetProperty("status").GetString() == "failed"
+                    || b.GetProperty("status").GetString() == "failed")
+                {
+                    failures.Add($"round {variant}: a concurrent job ended as failed -> "
+                        + $"{Summary(doneA)} | {Summary(b)}");
+                }
+            }
+            else
+            {
+                failures.Add($"round {variant}: second concurrent submit returned "
+                    + $"{(int)responseB.StatusCode} instead of 409 import_in_progress: {bodyBRaw}");
             }
         }
 
@@ -205,7 +239,8 @@ public class QaCsvImportMySqlProbe
         AppendResult(new { probe = "qa_concurrent_identical", rounds });
 
         failures.Should().BeEmpty(
-            "concurrent identical imports must neither duplicate rows nor fail a job");
+            "concurrent identical imports must neither duplicate rows nor fail a job "
+            + "(second submit is rejected with 409 import_in_progress)");
     }
 
     private static object Summary(JsonElement job) => new
