@@ -130,7 +130,9 @@ public sealed class CsvImportJobService
             var db = scope.ServiceProvider.GetRequiredService<MainDbContext>();
             var workouts = scope.ServiceProvider.GetRequiredService<WorkoutsRepository>();
 
-            var pipeline = new CsvImportPipeline(db, workouts, job.UserId);
+            var pipeline = new CsvImportPipeline(
+                db, workouts, job.UserId,
+                scope.ServiceProvider.GetRequiredService<ILogger<CsvImportPipeline>>());
             await pipeline.RunAsync(rows, job);
 
             job.Status = job.ErrorCount > 0 ? "completed_with_errors" : "completed";

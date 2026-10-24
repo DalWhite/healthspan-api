@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using healthspan_api.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MySqlConnector;
 
 /// <summary>
@@ -28,15 +29,18 @@ public sealed class CsvImportPipeline
     private readonly MainDbContext _db;
     private readonly WorkoutsRepository _workouts;
     private readonly string _userId;
+    private readonly ILogger<CsvImportPipeline> _logger;
 
     public CsvImportPipeline(
         MainDbContext db,
         WorkoutsRepository workouts,
-        string userId)
+        string userId,
+        ILogger<CsvImportPipeline> logger)
     {
         _db = db;
         _workouts = workouts;
         _userId = userId;
+        _logger = logger;
     }
 
     public async Task RunAsync(
@@ -254,10 +258,11 @@ public sealed class CsvImportPipeline
             _insertMs += swIns.ElapsedMilliseconds;
             job.AddProcessed(entities.Count);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException batchEx)
         {
             // A batch failure must not lose the whole batch: retry row by row
             // so only the genuinely bad rows land in job.Errors.
+            _logger.LogWarning(batchEx, "CSV import batch insert failed, retrying per row");
             _db.ChangeTracker.Clear();
             foreach (var exercise in entities)
             {
@@ -270,7 +275,15 @@ public sealed class CsvImportPipeline
                 {
                     _db.ChangeTracker.Clear();
                     var row = rowByEntity[exercise];
-                    job.AddError(row.RowNumber, $"No se pudo importar la fila: {rowEx.Message}");
+                    // Full exception stays in the log; the job error carries the
+                    // mapped, user-safe reason (t_a4651a49).
+                    _logger.LogError(
+                        rowEx,
+                        "CSV import row {RowNumber} failed for user {UserId} (job {JobId})",
+                        row.RowNumber, _userId, job.Id);
+                    job.AddError(
+                        row.RowNumber,
+                        CsvImportErrorMapper.DescribeRowFailure(rowEx, row.RowNumber));
                 }
             }
         }
