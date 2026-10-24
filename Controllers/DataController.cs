@@ -51,7 +51,7 @@ public class DataController : ControllerBase
     /// dies on the FE 300 s timeout past ~5k rows.
     /// </summary>
     [HttpPost("import")]
-    public IActionResult ImportExercisesCsvData(IFormFile file)
+    public async Task<IActionResult> ImportExercisesCsvData(IFormFile file)
     {
         if (file == null || file.Length == 0)
         {
@@ -86,16 +86,18 @@ public class DataController : ControllerBase
         }
 
         var userId = _userProvider.GetCurrentUserId();
-        var job = _importJobs.Start(userId, parsed.Rows, parsed.Errors);
+        var job = await _importJobs.StartAsync(userId, parsed.Rows, parsed.Errors);
 
         return Accepted(new { jobId = job.Id, total = job.Total });
     }
 
     [HttpGet("import/{jobId}")]
-    public IActionResult GetImportJobStatus(string jobId)
+    public async Task<IActionResult> GetImportJobStatus(string jobId)
     {
         var userId = _userProvider.GetCurrentUserId();
-        var job = _importJobs.Find(jobId, userId);
+        // Live job if this process owns it; otherwise hydrated from the durable
+        // snapshot so the FE can re-attach after an API restart (t_e26d8b7d).
+        var job = await _importJobs.FindAsync(jobId, userId);
         if (job is null)
         {
             return NotFound();

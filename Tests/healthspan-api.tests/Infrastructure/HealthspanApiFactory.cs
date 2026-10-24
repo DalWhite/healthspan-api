@@ -23,6 +23,13 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
 
     private readonly string _databaseName = $"HealthspanTestDb_{Guid.NewGuid():N}";
 
+    /// <summary>Set to share one in-memory store across factory instances
+    /// (simulates an API restart, t_e26d8b7d): identical EF options map to the
+    /// same internal service provider and database root. Must be set via
+    /// object initializer before the host is created; xunit fixtures may only
+    /// have one public constructor.</summary>
+    public string? SharedDatabaseName { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // A fixed environment makes local and CI behavior identical. Keeping error logging
@@ -39,7 +46,7 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions>();
             services.RemoveAll<MainDbContext>();
             services.AddDbContext<MainDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
+                options.UseInMemoryDatabase(SharedDatabaseName ?? _databaseName));
 
             // Replace external service dependencies with no-ops/fakes.
             services.RemoveAll<IOcrExtractionProvider>();
