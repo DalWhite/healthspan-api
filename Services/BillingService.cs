@@ -30,6 +30,14 @@ public sealed class BillingService(
 
         if (existing is not null)
         {
+            // QA-B2: a replayed key must match the original payload. Returning the
+            // original session for a different plan would charge a plan the user
+            // never asked for.
+            if (!string.Equals(existing.PlanSlug, planSlug, StringComparison.Ordinal))
+            {
+                throw new IdempotencyConflictException(idempotencyKey, existing.PlanSlug, planSlug);
+            }
+
             return existing;
         }
 
@@ -40,6 +48,23 @@ public sealed class BillingService(
         if (plan is null)
         {
             throw new PlanNotFoundException(planSlug);
+        }
+
+        // QA-B3 (product decision): one live subscription per user. A second
+        // checkout while the mirror is trialing/active/past_due would orphan the
+        // previous Stripe subscription (double billing). The user must cancel
+        // first; in-app plan switching is Fase 2.
+        var liveSubscription = await db.Subscriptions
+            .FirstOrDefaultAsync(
+                s => s.UserId == userId
+                     && (s.Status == SubscriptionStatus.Trialing
+                         || s.Status == SubscriptionStatus.Active
+                         || s.Status == SubscriptionStatus.PastDue),
+                cancellationToken);
+
+        if (liveSubscription is not null)
+        {
+            throw new ActiveSubscriptionException(liveSubscription.Status);
         }
 
         if (!gateway.IsConfigured)
@@ -94,12 +119,17 @@ public sealed class BillingService(
 
             if (snapshot is null)
             {
-                subscription.Status = SubscriptionStatus.Canceled;
+                // QA-B14: a gateway lookup miss (e.g. a test/live API-key mismatch)
+                // is NOT evidence of cancellation. Never mutate local state on a
+                // miss — log and serve the local mirror. Only an explicit
+                // customer.subscription.deleted webhook cancels the mirror.
+                logger.LogWarning(
+                    "Billing gateway lookup missed subscription {SubscriptionId}; serving local state without mutation.",
+                    subscription.GatewaySubscriptionId);
+                return subscription;
             }
-            else
-            {
-                ApplySnapshot(subscription, snapshot);
-            }
+
+            ApplySnapshot(subscription, snapshot);
 
             subscription.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
@@ -200,6 +230,8 @@ public sealed class BillingService(
         {
             "checkout.session.completed" => await ApplyCheckoutCompletedAsync(parsed, cancellationToken),
             "customer.subscription.created" or "customer.subscription.updated" or "customer.subscription.deleted" => await ApplySubscriptionUpdateAsync(parsed, cancellationToken),
+            "charge.refunded" => await ApplyChargeRefundedAsync(parsed, cancellationToken),
+            "invoice.payment_failed" => await ApplyInvoicePaymentFailedAsync(parsed, cancellationToken),
             _ => false,
         };
 
@@ -313,6 +345,87 @@ public sealed class BillingService(
         return true;
     }
 
+    /// <summary>
+    /// QA-B4: a refunded charge revokes Premium. The local mirror goes to
+    /// canceled with the Refunded flag set; access must not stay active.
+    /// </summary>
+    private async Task<bool> ApplyChargeRefundedAsync(
+        ParsedGatewayEvent parsed,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await FindSubscriptionForEventAsync(parsed, cancellationToken);
+
+        if (subscription is null)
+        {
+            logger.LogWarning(
+                "Refund webhook {EventId} references unknown subscription/customer {CustomerId}.",
+                parsed.EventId,
+                parsed.GatewayCustomerId);
+            return false;
+        }
+
+        subscription.Status = SubscriptionStatus.Canceled;
+        subscription.Refunded = true;
+        subscription.CancelAtPeriodEnd = true;
+        subscription.UpdatedAt = DateTime.UtcNow;
+        return true;
+    }
+
+    /// <summary>
+    /// QA-B5: a failed renewal moves the mirror to past_due (UX state 'pago
+    /// fallado', spec A9). The subscription stays recoverable — Stripe retries
+    /// the payment; a later customer.subscription.updated mirrors the outcome.
+    /// </summary>
+    private async Task<bool> ApplyInvoicePaymentFailedAsync(
+        ParsedGatewayEvent parsed,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await FindSubscriptionForEventAsync(parsed, cancellationToken);
+
+        if (subscription is null)
+        {
+            logger.LogWarning(
+                "Payment-failed webhook {EventId} references unknown subscription/customer {CustomerId}.",
+                parsed.EventId,
+                parsed.GatewayCustomerId);
+            return false;
+        }
+
+        subscription.Status = SubscriptionStatus.PastDue;
+        subscription.UpdatedAt = DateTime.UtcNow;
+        return true;
+    }
+
+    private async Task<Subscription?> FindSubscriptionForEventAsync(
+        ParsedGatewayEvent parsed,
+        CancellationToken cancellationToken)
+    {
+        if (parsed.Subscription is not null)
+        {
+            var byGatewayId = await db.Subscriptions
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    s => s.GatewaySubscriptionId == parsed.Subscription.GatewaySubscriptionId,
+                    cancellationToken);
+
+            if (byGatewayId is not null)
+            {
+                return byGatewayId;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(parsed.GatewayCustomerId))
+        {
+            return await db.Subscriptions
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    s => s.GatewayCustomerId == parsed.GatewayCustomerId,
+                    cancellationToken);
+        }
+
+        return null;
+    }
+
     private static void ApplySnapshot(Subscription subscription, GatewaySubscriptionSnapshot snapshot)
     {
         subscription.Status = ParseStatus(snapshot.Status);
@@ -340,6 +453,12 @@ public sealed class BillingService(
 
 public class PlanNotFoundException(string planSlug)
     : Exception($"Plan '{planSlug}' does not exist.");
+
+public class IdempotencyConflictException(string idempotencyKey, string originalPlan, string requestedPlan)
+    : Exception($"The Idempotency-Key '{idempotencyKey}' was already used for plan '{originalPlan}'; '{requestedPlan}' requires a new key.");
+
+public class ActiveSubscriptionException(SubscriptionStatus status)
+    : Exception($"This account already has a Premium subscription ({status.ToString().ToLowerInvariant()}). Cancel it before starting a new checkout.");
 
 public class SubscriptionNotFoundException()
     : Exception("No subscription found for this user.");

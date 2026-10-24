@@ -164,9 +164,12 @@ public class BillingSubscriptionWebhookTests : ApiTestBase
     [Fact]
     public async Task Webhook_FullFlow_CheckoutThenActiveThenReplayThenCancel()
     {
-        // 1. No subscription yet.
+        // 1. No subscription yet → 200 status "none" (QA-B6: free is a normal
+        // state, not 404 — spec §30 TrialBanner/EmptyState).
         var initialGet = await Client.GetAsync("/api/billing/subscription");
-        initialGet.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        initialGet.StatusCode.Should().Be(HttpStatusCode.OK);
+        var initialBody = JsonDocument.Parse(await initialGet.Content.ReadAsStringAsync()).RootElement;
+        initialBody.GetProperty("status").GetString().Should().Be("none");
 
         // 2. checkout.session.completed creates the local mirror.
         var (checkoutStatus, checkoutBody) = await PostWebhookAsync(
@@ -300,14 +303,16 @@ public class BillingNoSubscriptionTests : ApiTestBase
     public BillingNoSubscriptionTests(HealthspanApiFactory factory) : base(factory) { }
 
     [Fact]
-    public async Task GetSubscription_WithoutSubscription_Returns404()
+    public async Task GetSubscription_WithoutSubscription_Returns200None()
     {
+        // QA-B6 regression: a free account is a normal state — 200 status "none",
+        // not 404. The FE TrialBanner/EmptyState build the screen from it.
         var response = await Client.GetAsync("/api/billing/subscription");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        body.GetProperty("code").GetString().Should().Be("subscription_not_found");
+        body.GetProperty("status").GetString().Should().Be("none");
     }
 
     [Fact]

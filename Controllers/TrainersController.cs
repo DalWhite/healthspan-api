@@ -48,6 +48,24 @@ public class TrainersController : ControllerBase
             return Unauthorized();
         }
 
+        // QA-B7 (spec B3): PUT with an empty url removes the published link
+        // (same effect as DELETE; 204 on success).
+        if (string.IsNullOrWhiteSpace(request.Url))
+        {
+            var existingLink = await _db.TrainerPaymentLinks
+                .FirstOrDefaultAsync(l => l.UserId == userId, cancellationToken);
+
+            if (existingLink is null)
+            {
+                return ApiProblemResult.NotFound("payment_link_not_found", "No payment link has been published for this trainer.");
+            }
+
+            _db.TrainerPaymentLinks.Remove(existingLink);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return NoContent();
+        }
+
         var verifiedDomain = TrainerPaymentLinkValidator.Validate(request.Url);
 
         if (verifiedDomain is null)

@@ -17,6 +17,9 @@ public class Subscription
     public SubscriptionStatus Status { get; set; } = SubscriptionStatus.Incomplete;
     public DateTime? CurrentPeriodEnd { get; set; }
     public bool CancelAtPeriodEnd { get; set; }
+    /// <summary>Set when the gateway reported a charge refund (QA-B4): access was
+    /// revoked because the paid charge was refunded.</summary>
+    public bool Refunded { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -92,6 +92,7 @@ public sealed class FakeBillingGateway : IBillingGateway
         string? sessionId = null;
         string? metadataUserId = null;
         string? metadataPlanSlug = null;
+        string? customerId = null;
 
         if (root.TryGetProperty("data", out var data) &&
             data.TryGetProperty("object", out var obj) &&
@@ -105,7 +106,7 @@ public sealed class FakeBillingGateway : IBillingGateway
                 subscriptionId = sessionId;
             }
 
-            var customerId = obj.TryGetProperty("customer", out var custEl) ? custEl.GetString() : null;
+            customerId = obj.TryGetProperty("customer", out var custEl) ? custEl.GetString() : null;
 
             if (!string.IsNullOrWhiteSpace(subscriptionId))
             {
@@ -119,7 +120,33 @@ public sealed class FakeBillingGateway : IBillingGateway
                 var cancelAtPeriodEnd = obj.TryGetProperty("cancel_at_period_end", out var cancelEl) && cancelEl.GetBoolean();
 
                 subscription = new GatewaySubscriptionSnapshot(subscriptionId, customerId, status, periodEnd, cancelAtPeriodEnd);
-                _subscriptions[subscriptionId] = subscription;
+
+                if (eventType.StartsWith("customer.subscription") || eventType == "checkout.session.completed")
+                {
+                    _subscriptions[subscriptionId] = subscription;
+                }
+                else if (eventType == "invoice.payment_failed" && _subscriptions.TryGetValue(subscriptionId, out var failedSub))
+                {
+                    // Real Stripe: a failed renewal flips the subscription object to past_due.
+                    _subscriptions[subscriptionId] = failedSub with { Status = "past_due" };
+                }
+                else if (eventType == "charge.refunded" && _subscriptions.TryGetValue(subscriptionId, out var refundedSub))
+                {
+                    _subscriptions[subscriptionId] = refundedSub with { Status = "canceled" };
+                }
+            }
+
+            if (eventType == "charge.refunded" && string.IsNullOrWhiteSpace(subscriptionId) && !string.IsNullOrWhiteSpace(customerId))
+            {
+                // Stripe charges reference the customer; refunding revokes the customer's
+                // stored subscription too.
+                foreach (var key in _subscriptions.Keys.ToList())
+                {
+                    if (_subscriptions[key].GatewayCustomerId == customerId)
+                    {
+                        _subscriptions[key] = _subscriptions[key] with { Status = "canceled" };
+                    }
+                }
             }
 
             if (obj.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object)
@@ -129,7 +156,7 @@ public sealed class FakeBillingGateway : IBillingGateway
             }
         }
 
-        return new ParsedGatewayEvent(eventId, eventType, payload, subscription, sessionId, metadataUserId, metadataPlanSlug);
+        return new ParsedGatewayEvent(eventId, eventType, payload, subscription, sessionId, metadataUserId, metadataPlanSlug, customerId);
     }
 
     /// <summary>Builds a valid Stripe-Signature header for a payload (t + HMAC v1).</summary>

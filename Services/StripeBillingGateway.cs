@@ -45,7 +45,12 @@ public class StripeBillingGateway : IBillingGateway
             ["mode"] = "subscription",
             ["line_items[0][price]"] = priceId,
             ["line_items[0][quantity]"] = "1",
-            ["subscription_data[trial_period_days]"] = "14",
+            // QA-B9 (product decision): 7-day trial WITH a card collected upfront.
+            // Stripe hosted checkout cannot start a subscription trial without a
+            // payment method, so 'trial sin tarjeta' is not realizable; the honest
+            // copy is "7 días gratis, luego se cobra automáticamente. Cancela
+            // cuando quieras."
+            ["subscription_data[trial_period_days]"] = "7",
             ["metadata[userId]"] = userId,
             ["metadata[planSlug]"] = planSlug,
             ["success_url"] = _settings.SuccessUrl,
@@ -164,11 +169,18 @@ public class StripeBillingGateway : IBillingGateway
             string? sessionId = null;
             string? metadataUserId = null;
             string? metadataPlanSlug = null;
+            string? gatewayCustomerId = null;
 
             if (root.TryGetProperty("data", out var data) && data.TryGetProperty("object", out var obj))
             {
                 if (obj.ValueKind == JsonValueKind.Object)
                 {
+                    gatewayCustomerId = obj.TryGetProperty("customer", out var custEl)
+                        ? custEl.ValueKind == JsonValueKind.Object
+                            ? custEl.TryGetProperty("id", out var cid) ? cid.GetString() : null
+                            : custEl.GetString()
+                        : null;
+
                     if (eventType.StartsWith("customer.subscription"))
                     {
                         subscription = ParseSubscription(obj);
@@ -177,7 +189,7 @@ public class StripeBillingGateway : IBillingGateway
                     {
                         sessionId = obj.TryGetProperty("id", out var sessionEl) ? sessionEl.GetString() : null;
                         var subscriptionId = obj.TryGetProperty("subscription", out var subEl) ? subEl.GetString() : null;
-                        var customerId = obj.TryGetProperty("customer", out var custEl) ? custEl.GetString() : null;
+                        var customerId = obj.TryGetProperty("customer", out var custEl2) ? custEl2.GetString() : null;
 
                         if (!string.IsNullOrWhiteSpace(subscriptionId))
                         {
@@ -197,10 +209,27 @@ public class StripeBillingGateway : IBillingGateway
                             metadataPlanSlug = metadata.TryGetProperty("planSlug", out var planSlugEl) ? planSlugEl.GetString() : null;
                         }
                     }
+                    else if (eventType == "invoice.payment_failed" || eventType == "charge.refunded")
+                    {
+                        // QA-B4/B5: invoice and charge objects reference the subscription
+                        // and customer by id; BillingService derives the state change from
+                        // the event type itself.
+                        var relatedSubscriptionId = obj.TryGetProperty("subscription", out var relatedEl) ? relatedEl.GetString() : null;
+
+                        if (!string.IsNullOrWhiteSpace(relatedSubscriptionId))
+                        {
+                            subscription = new GatewaySubscriptionSnapshot(
+                                relatedSubscriptionId,
+                                gatewayCustomerId,
+                                Status: eventType == "invoice.payment_failed" ? "past_due" : "canceled",
+                                CurrentPeriodEnd: null,
+                                CancelAtPeriodEnd: false);
+                        }
+                    }
                 }
             }
 
-            return new ParsedGatewayEvent(eventId, eventType, payload, subscription, sessionId, metadataUserId, metadataPlanSlug);
+            return new ParsedGatewayEvent(eventId, eventType, payload, subscription, sessionId, metadataUserId, metadataPlanSlug, gatewayCustomerId);
         }
     }
 

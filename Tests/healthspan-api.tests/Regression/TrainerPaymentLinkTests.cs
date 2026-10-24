@@ -13,7 +13,8 @@ public class TrainerPaymentLinkTests : ApiTestBase
     private async Task<(HttpStatusCode StatusCode, JsonElement Body)> PutPaymentLinkAsync(string url)
     {
         var response = await Client.PutAsJsonAsync("/api/trainers/me/payment-link", new { url });
-        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var text = await response.Content.ReadAsStringAsync();
+        var body = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
 
         return (response.StatusCode, body.RootElement.Clone());
     }
@@ -81,5 +82,25 @@ public class TrainerPaymentLinkTests : ApiTestBase
 
         status.Should().Be(HttpStatusCode.OK);
         body.GetProperty("verifiedDomain").GetString().Should().Be("paypal.me");
+    }
+
+    [Fact]
+    public async Task PutPaymentLink_EmptyUrl_RemovesPublishedLink()
+    {
+        // QA-B7 regression (spec B3): PUT with an empty url removes the link
+        // (204), same effect as DELETE — the FE settings form uses this path.
+        var (publishStatus, _) = await PutPaymentLinkAsync("https://paypal.me/quitarlink");
+        publishStatus.Should().Be(HttpStatusCode.OK);
+
+        var (removeStatus, _) = await PutPaymentLinkAsync("");
+        removeStatus.Should().Be(HttpStatusCode.NoContent);
+
+        var afterRemove = await Client.GetAsync("/api/trainers/me/payment-link");
+        afterRemove.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Removing when there is nothing to remove mirrors DELETE semantics.
+        var (againStatus, againBody) = await PutPaymentLinkAsync("");
+        againStatus.Should().Be(HttpStatusCode.NotFound);
+        againBody.GetProperty("code").GetString().Should().Be("payment_link_not_found");
     }
 }
