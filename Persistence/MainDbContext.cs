@@ -31,6 +31,11 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<Adaptation> Adaptations { get; set; }
     public DbSet<ExerciseTypeAdaptation> ExerciseTypeAdaptations { get; set; }
     public DbSet<ExerciseAdaptation> ExerciseAdaptations { get; set; }
+    public DbSet<Plan> Plans { get; set; }
+    public DbSet<Subscription> Subscriptions { get; set; }
+    public DbSet<BillingEvent> BillingEvents { get; set; }
+    public DbSet<CheckoutSessionRequest> CheckoutSessionRequests { get; set; }
+    public DbSet<TrainerPaymentLink> TrainerPaymentLinks { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
@@ -121,6 +126,37 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
         builder.Entity<WellnessActivity>()
             .HasIndex(activity => new { activity.UserId, activity.Type });
+
+        // Billing: personal data stays scoped to `me`. BillingEvents and
+        // TrainerPaymentLinks have no filter on purpose — events are processed
+        // webhook-side (no user context) and payment links are published by the
+        // trainer for their trainees.
+        builder.Entity<Subscription>().HasQueryFilter(subscription => subscription.UserId == _userProvider.GetCurrentUserId());
+        builder.Entity<CheckoutSessionRequest>().HasQueryFilter(session => session.UserId == _userProvider.GetCurrentUserId());
+
+        builder.Entity<Plan>()
+            .HasIndex(plan => plan.Slug)
+            .IsUnique();
+
+        builder.Entity<Subscription>()
+            .HasIndex(subscription => subscription.UserId)
+            .IsUnique();
+
+        builder.Entity<Subscription>()
+            .HasIndex(subscription => subscription.GatewaySubscriptionId)
+            .IsUnique();
+
+        builder.Entity<BillingEvent>()
+            .HasIndex(billingEvent => billingEvent.GatewayEventId)
+            .IsUnique();
+
+        builder.Entity<CheckoutSessionRequest>()
+            .HasIndex(session => new { session.UserId, session.IdempotencyKey })
+            .IsUnique();
+
+        builder.Entity<TrainerPaymentLink>()
+            .HasIndex(link => link.UserId)
+            .IsUnique();
 
         builder.Entity<Workout>()
             .Property(workout => workout.DailySessionKey)
