@@ -42,6 +42,13 @@ public class CsvService
     {
         var result = new CsvImportParseResult();
 
+        if (FirstLineUsesSemicolonDelimiter(stream))
+        {
+            result.StructuralErrors.Add(
+                "El CSV parece usar ';' como separador. Descarga la plantilla de comas en GET /data/import/template y vuelve a probar.");
+            return result;
+        }
+
         using var reader = new StreamReader(stream);
         var csvConfig = new CsvHelper.Configuration.CsvConfiguration(CultureInfo.InvariantCulture)
         {
@@ -161,6 +168,44 @@ public class CsvService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Reads just the first physical line (skipping a UTF-8 BOM) and reports
+    /// whether it looks semicolon-delimited: contains ';' and no ','.
+    /// A semicolon CSV with the comma-pinned config arrives as one giant
+    /// header field, which previously surfaced as a bland structural 400;
+    /// this turns it into an actionable message pointing to the template
+    /// (t_020e68a5). Non-seekable streams are left untouched (no false
+    /// positives, no rewinding side effects).
+    /// </summary>
+    private static bool FirstLineUsesSemicolonDelimiter(Stream stream)
+    {
+        if (!stream.CanSeek)
+        {
+            return false;
+        }
+
+        const int peekBytes = 4096;
+        var origin = stream.Position;
+        byte[] buffer = new byte[peekBytes];
+        var bytesRead = stream.Read(buffer, 0, peekBytes);
+        stream.Seek(origin, SeekOrigin.Begin);
+
+        int start = 0;
+        if (bytesRead >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+        {
+            start = 3; // UTF-8 BOM
+        }
+
+        int end = start;
+        while (end < bytesRead && buffer[end] != (byte)'\n' && buffer[end] != (byte)'\r')
+        {
+            end++;
+        }
+
+        var firstLine = System.Text.Encoding.UTF8.GetString(buffer, start, end - start);
+        return firstLine.Contains(';') && !firstLine.Contains(',');
     }
 }
 
