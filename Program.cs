@@ -26,6 +26,8 @@ builder.Services.Configure<AzureBlobStorageSettings>(builder.Configuration);
 builder.Services.Configure<FileSystemDocumentStorageSettings>(builder.Configuration);
 builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configuration);
 builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
+builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection(StripeSettings.SectionName));
+builder.Services.Configure<healthspan_api.Options.SponsoredOffersSettings>(builder.Configuration);
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -132,6 +134,8 @@ builder.Services.AddScoped<RoutinesRepository>();
 builder.Services.AddScoped<ExerciseTypesRepository>();
 builder.Services.AddScoped<BloodTestsRepository>();
 builder.Services.AddScoped<GalpinAssessmentsRepository>();
+builder.Services.AddScoped<WellnessActivitiesRepository>();
+builder.Services.AddScoped<WellnessActivityService>();
 builder.Services.AddScoped<ExerciseMetricsService>();
 builder.Services.AddScoped<WeeklyTrainingSummaryService>();
 builder.Services.AddScoped<TrainingTrackerAnalyticsService>();
@@ -140,12 +144,16 @@ builder.Services.AddScoped<RoutineAdherenceService>();
 builder.Services.AddScoped<HealthProfileService>();
 builder.Services.AddScoped<TrainingAccessService>();
 builder.Services.AddScoped<SyncService>();
+builder.Services.AddHttpClient<IBillingGateway, StripeBillingGateway>();
+builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<BloodAnalyticsService>();
 builder.Services.AddSingleton<BloodTestProcessingChannel>();
 builder.Services.AddHostedService<BloodTestProcessingWorker>();
 builder.Services.AddScoped<GalpinAssessmentCatalogService>();
 builder.Services.AddScoped<GalpinAssessmentService>();
 builder.Services.AddScoped<HealthAccessService>();
+builder.Services.AddScoped<SponsoredOffersRepository>();
+builder.Services.AddScoped<SponsoredOfferService>();
 builder.Services.AddScoped<HealthDashboardService>();
 builder.Services.AddScoped<UserDataExportService>();
 builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
@@ -226,6 +234,9 @@ await using (var scope = app.Services.CreateAsyncScope())
         // a heuristic mapping only for exercise types that have none yet.
         await AdaptationCatalogSeeder.UpsertAsync(db);
         await AdaptationCatalogSeeder.BackfillExerciseTypeAdaptationsAsync(db);
+
+        // Healthspan Premium plans (billing MVP, t_c0e8a770).
+        await BillingPlanSeeder.UpsertAsync(db);
     }
     catch (Exception ex)
     {
