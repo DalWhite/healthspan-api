@@ -152,6 +152,7 @@ builder.Services.AddScoped<AzureBlobBloodTestDocumentStorage>();
 builder.Services.AddScoped<FileSystemBloodTestDocumentStorage>();
 builder.Services.AddScoped<IBloodTestDocumentStorage, HybridBloodTestDocumentStorage>();
 builder.Services.AddScoped<CsvService>();
+builder.Services.AddSingleton<CsvImportJobService>();
 builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<GoogleTokenValidator>();
 builder.Services.AddScoped<GoogleReturnUrlResolver>();
