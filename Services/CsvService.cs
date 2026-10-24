@@ -1,14 +1,15 @@
 using CsvHelper;
-using CsvHelper.TypeConversion;
 using System.Globalization;
 
 public class CsvService
 {
-    private readonly MainDbContext _context;
-    public CsvService(MainDbContext context)
-    {
-        _context = context;
-    }
+    public const int MaxImportRows = 50_000;
+    public const long MaxImportBytes = 5 * 1024 * 1024;
+
+    // dd/MM/yy plus unpadded day/month (the historical CSV uses 15/4/18) and ISO.
+    private static readonly string[] DateFormats =
+        ["dd/MM/yy", "d/M/yy", "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd"];
+
     public byte[] CreateCsvImportTemplate()
     {
         using var memoryStream = new MemoryStream();
@@ -30,61 +31,155 @@ public class CsvService
 
         return memoryStream.ToArray();
     }
-    public Dictionary<DateTime, List<Exercise>> ReadCsvExercisesAndGroupByDate(IFormFile file)
+
+    /// <summary>
+    /// Parses a CSV into valid rows plus per-row errors, without touching the
+    /// database. Structural problems (missing header, row cap) go to
+    /// StructuralErrors so the endpoint can answer 400 upfront; row-level
+    /// problems (bad date, bad number) never abort the import (t_c1f8e6ac).
+    /// </summary>
+    public CsvImportParseResult ParseCsvRows(Stream stream)
     {
-        var exerciseGroups = new Dictionary<DateTime, List<Exercise>>();
+        var result = new CsvImportParseResult();
 
-        using (var reader = new StreamReader(file.OpenReadStream()))
+        using var reader = new StreamReader(stream);
+        var csvConfig = new CsvHelper.Configuration.CsvConfiguration(CultureInfo.InvariantCulture)
         {
-            var csvConfig = new CsvHelper.Configuration.CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                MissingFieldFound = null,
-                HeaderValidated = null,
-                Delimiter = ","
-            };
+            MissingFieldFound = null,
+            HeaderValidated = null,
+            Delimiter = ","
+        };
 
-            using (var csv = new CsvReader(reader, csvConfig))
+        using var csv = new CsvReader(reader, csvConfig);
+
+        if (!csv.Read() || !csv.ReadHeader())
+        {
+            result.StructuralErrors.Add("El CSV no tiene fila de cabecera.");
+            return result;
+        }
+
+        var header = csv.HeaderRecord;
+        if (header == null ||
+            !header.Contains("Date") ||
+            !header.Contains("ExerciseType"))
+        {
+            result.StructuralErrors.Add("La cabecera debe incluir las columnas Date y ExerciseType.");
+            return result;
+        }
+
+        while (csv.Read())
+        {
+            if (result.Rows.Count + result.Errors.Count >= MaxImportRows)
             {
-                csv.Read();
-                csv.ReadHeader();
-                var options = new TypeConverterOptions { Formats = ["dd/MM/yy"] };
-                csv.Context.TypeConverterOptionsCache.AddOptions<DateTime>(options);
-                while (csv.Read())
+                result.Rows.Clear();
+                result.Errors.Clear();
+                result.StructuralErrors.Add($"Demasiadas filas (máximo {MaxImportRows}).");
+                return result;
+            }
+
+            var rowNumber = csv.Context.Parser.Row; // physical line in the file (header = 1)
+            var dateRaw = csv.GetField("Date")?.Trim() ?? "";
+            var typeName = csv.GetField("ExerciseType")?.Trim();
+
+            if (!DateTime.TryParseExact(
+                    dateRaw,
+                    DateFormats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var date))
+            {
+                result.Errors.Add(new CsvImportRowError(rowNumber, $"Fecha inválida '{dateRaw}' (formato dd/MM/yy)."));
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(typeName))
+            {
+                result.Errors.Add(new CsvImportRowError(rowNumber, "Falta el nombre del ejercicio (ExerciseType)."));
+                continue;
+            }
+
+            int? series = null;
+            int? reps = null;
+            double? weight = null;
+            var invalid = false;
+
+            var seriesRaw = csv.GetField("Series")?.Trim() ?? "";
+            if (seriesRaw.Length > 0)
+            {
+                if (int.TryParse(seriesRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSeries))
                 {
-                    var date = csv.GetField<DateTime>("Date");
-                    var typeId = EnsureExerciseTypeExists(csv.GetField("ExerciseType"));
-
-                    var exercise = new Exercise
-                    {
-                        Series = csv.GetField<int?>("Series"),
-                        Repetitions = csv.GetField<int?>("Reps"),
-                        Weight = csv.GetField<double?>("Weight"),
-                        Comments = csv.GetField("AdditionalComments"),
-                        TypeId = typeId,
-                    };
-
-                    if (!exerciseGroups.ContainsKey(date))
-                    {
-                        exerciseGroups[date] = new List<Exercise>();
-                    }
-                    exerciseGroups[date].Add(exercise);
+                    series = parsedSeries;
+                }
+                else
+                {
+                    result.Errors.Add(new CsvImportRowError(rowNumber, $"Series inválido '{seriesRaw}'."));
+                    invalid = true;
                 }
             }
+
+            var repsRaw = csv.GetField("Reps")?.Trim() ?? "";
+            if (!invalid && repsRaw.Length > 0)
+            {
+                if (int.TryParse(repsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedReps))
+                {
+                    reps = parsedReps;
+                }
+                else
+                {
+                    result.Errors.Add(new CsvImportRowError(rowNumber, $"Repeticiones inválidas '{repsRaw}'."));
+                    invalid = true;
+                }
+            }
+
+            var weightRaw = csv.GetField("Weight")?.Trim() ?? "";
+            if (!invalid && weightRaw.Length > 0)
+            {
+                if (double.TryParse(weightRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedWeight))
+                {
+                    weight = parsedWeight;
+                }
+                else
+                {
+                    result.Errors.Add(new CsvImportRowError(rowNumber, $"Peso inválido '{weightRaw}'."));
+                    invalid = true;
+                }
+            }
+
+            if (invalid)
+            {
+                continue;
+            }
+
+            result.Rows.Add(new CsvImportRow(
+                rowNumber,
+                date,
+                typeName,
+                series,
+                reps,
+                weight,
+                csv.GetField("AdditionalComments") ?? ""));
         }
 
-        return exerciseGroups;
+        return result;
     }
-    private int EnsureExerciseTypeExists(string typeName)
-    {
-        var type = _context.ExerciseTypes.SingleOrDefault(t => t.Name == typeName);
-        if (type == null)
-        {
-            type = new ExerciseType { Name = typeName };
-            _context.ExerciseTypes.Add(type);
-            _context.SaveChanges();
-        }
-        return type.Id;
-    }
+}
+
+public sealed record CsvImportRow(
+    int RowNumber,
+    DateTime Date,
+    string TypeName,
+    int? Series,
+    int? Reps,
+    double? Weight,
+    string Comments);
+
+public sealed record CsvImportRowError(int Row, string Message);
+
+public sealed class CsvImportParseResult
+{
+    public List<CsvImportRow> Rows { get; } = [];
+    public List<CsvImportRowError> Errors { get; } = [];
+    public List<string> StructuralErrors { get; } = [];
 }
 
 public class ExercisesImportTemplate

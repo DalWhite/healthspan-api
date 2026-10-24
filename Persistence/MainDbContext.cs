@@ -62,6 +62,10 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
             .HasIndex(exercise => exercise.ClientEntityId)
             .IsUnique();
 
+        // Per-type history lookups (1RM seeding, trends) — t_37acc65b §6.1.
+        builder.Entity<Exercise>()
+            .HasIndex(exercise => new { exercise.TypeId, exercise.WorkoutId });
+
         builder.Entity<SyncOperation>()
             .HasIndex(entry => new { entry.UserId, entry.OpId })
             .IsUnique();

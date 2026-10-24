@@ -94,9 +94,35 @@ public class CsvImportBaselineBenchmark
 
         var stopwatch = Stopwatch.StartNew();
         var response = await client.PostAsync("/data/import", form);
-        stopwatch.Stop();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Accepted);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        // Bulk import is async (t_c1f8e6ac): measure POST → job completion.
+        var posted = JsonSerializer.Deserialize<JsonElement>(
+            await response.Content.ReadAsStringAsync());
+        var jobId = posted.GetProperty("jobId").GetString()!;
+        string status;
+        JsonElement lastJson = default;
+        do
+        {
+            using var statusResponse = await client.GetAsync($"/data/import/{jobId}");
+            statusResponse.EnsureSuccessStatusCode();
+            var json = JsonSerializer.Deserialize<JsonElement>(
+                await statusResponse.Content.ReadAsStringAsync());
+            lastJson = json;
+            status = json.GetProperty("status").GetString()!;
+            if (status is "running" or "queued")
+            {
+                await Task.Delay(100);
+            }
+        }
+        while (status is "queued" or "running");
+        stopwatch.Stop();
+        if (status != "completed")
+        {
+            var reason = lastJson.TryGetProperty("failureReason", out var fr) ? fr.GetString() : "(none)";
+            var errs = lastJson.TryGetProperty("errors", out var er) ? er.GetRawText() : "[]";
+            status.Should().Be("completed", $"benchmark CSV has no bad rows; job failed: {reason} | errors: {errs}");
+        }
 
         var importedCount = await db.Exercises
             .IgnoreQueryFilters()
@@ -158,6 +184,32 @@ public class CsvImportBaselineBenchmark
                 Database = _databaseName,
             };
             _connectionString = builder.ToString();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    // Benchmark schemas are throwaway; drop them so repeated
+                    // runs don't litter the MySQL server.
+                    var builder = new MySqlConnector.MySqlConnectionStringBuilder(_connectionString)
+                    {
+                        Database = null,
+                    };
+                    using var connection = new MySqlConnector.MySqlConnection(builder.ToString());
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = $"DROP DATABASE IF EXISTS `{_databaseName}`";
+                    command.ExecuteNonQuery();
+                }
+                catch
+                {
+                    // Best-effort cleanup; never fail a benchmark over it.
+                }
+            }
+            base.Dispose(disposing);
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
