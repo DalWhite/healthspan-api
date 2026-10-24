@@ -347,6 +347,248 @@ public class WorkoutsRepository
         }
     }
 
+    /// <summary>
+    /// Bulk variant of GetOrCreateWorkoutSessionAsync for CSV import jobs
+    /// (t_c1f8e6ac): one range query for every date of the job, one insert
+    /// batch for the missing daily sessions, instead of a Serializable
+    /// transaction per date. Returns the workout id per date.
+    ///
+    /// Concurrency (t_633ebd61): two imports of the same user can compute the
+    /// same DailySessionKeys at the same time. The loser's insert fails on
+    /// IX_Workouts_DailySessionKey; the winner commits its sessions before its
+    /// batch loop starts, so a single retry resolves every date with a plain
+    /// range SELECT and an empty insert batch. The locked, serializable
+    /// per-date path is kept as a last resort only: running it per date while
+    /// the winner's batch transaction is still open deadlocks on gap locks
+    /// (QA probe t_79d39b1e: 3/3 rounds).
+    /// </summary>
+    public async Task<Dictionary<DateOnly, Guid>> GetOrCreateWorkoutSessionsBulkAsync(
+        string userId,
+        IReadOnlyCollection<DateOnly> dates,
+        string type,
+        CancellationToken cancellationToken = default)
+    {
+        if (dates.Count == 0)
+        {
+            return new Dictionary<DateOnly, Guid>();
+        }
+
+        try
+        {
+            return await TryGetOrCreateWorkoutSessionsBulkAsync(
+                userId, dates, type, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            _context.ChangeTracker.Clear();
+        }
+
+        try
+        {
+            // The concurrent import won and has committed its sessions by
+            // now: the range SELECT resolves every date and no insert races.
+            return await TryGetOrCreateWorkoutSessionsBulkAsync(
+                userId, dates, type, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            _context.ChangeTracker.Clear();
+        }
+
+        // Last resort: the locked, serializable per-date path.
+        var fallbackResult = new Dictionary<DateOnly, Guid>();
+        foreach (var date in dates.Distinct().OrderBy(date => date))
+        {
+            var (workout, _) = await GetOrCreateWorkoutSessionAsync(
+                userId,
+                date,
+                type,
+                cancellationToken);
+            fallbackResult[date] = workout.Id;
+        }
+        return fallbackResult;
+    }
+
+    private async Task<Dictionary<DateOnly, Guid>> TryGetOrCreateWorkoutSessionsBulkAsync(
+        string userId,
+        IReadOnlyCollection<DateOnly> dates,
+        string type,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<DateOnly, Guid>();
+        if (dates.Count == 0)
+        {
+            return result;
+        }
+
+        var sorted = dates.Distinct().OrderBy(date => date).ToList();
+        var start = sorted[0].ToDateTime(TimeOnly.MinValue);
+        var endExclusive = sorted[^1].ToDateTime(TimeOnly.MinValue).AddDays(1);
+
+        var existingRows = await _context.Workouts
+            .IgnoreQueryFilters()
+            .Where(workout =>
+                workout.UserId == userId
+                && workout.Date != null
+                && workout.Date >= start
+                && workout.Date < endExclusive)
+            .Select(workout => new
+            {
+                workout.Id,
+                workout.Date,
+                workout.DailySessionKey,
+                HasExercises = workout.Exercises.Any()
+            })
+            .ToListAsync(cancellationToken);
+
+        var byDate = existingRows
+            .GroupBy(row => DateOnly.FromDateTime(row.Date!.Value))
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        var newWorkouts = new List<Workout>();
+
+        IDbContextTransaction transaction = null;
+        try
+        {
+            if (_context.Database.IsRelational())
+            {
+                transaction = await _context.Database.BeginTransactionAsync(
+                    cancellationToken);
+            }
+
+            foreach (var date in sorted)
+            {
+                var dailyKey = WorkoutDailySessionKey.Create(userId, date);
+
+                if (!byDate.TryGetValue(date, out var candidates) || candidates.Count == 0)
+                {
+                    var workout = new Workout
+                    {
+                        Id = Guid.CreateVersion7(),
+                        Date = date.ToDateTime(TimeOnly.MinValue),
+                        Type = string.IsNullOrWhiteSpace(type) ? "Training" : type.Trim(),
+                        UserId = userId,
+                        DailySessionKey = dailyKey,
+                        Exercises = []
+                    };
+                    newWorkouts.Add(workout);
+                    result[date] = workout.Id;
+                    continue;
+                }
+
+                var picked = candidates
+                    .OrderByDescending(row => row.HasExercises)
+                    .ThenBy(row => row.Date)
+                    .ThenBy(row => row.Id)
+                    .First();
+
+                if (picked.DailySessionKey == dailyKey)
+                {
+                    result[date] = picked.Id;
+                    continue;
+                }
+
+                // The daily key lives on another workout (e.g. a
+                // session-scoped one created by the tracker): move it to the
+                // picked workout, mirroring GetOrCreateWorkoutSessionAsync.
+                var tracked = await _context.Workouts
+                    .IgnoreQueryFilters()
+                    .FirstAsync(workout => workout.Id == picked.Id, cancellationToken);
+                var conflicting = await _context.Workouts
+                    .IgnoreQueryFilters()
+                    .Where(workout =>
+                        workout.Id != picked.Id
+                        && workout.DailySessionKey == dailyKey)
+                    .ToListAsync(cancellationToken);
+                foreach (var conflict in conflicting)
+                {
+                    conflict.DailySessionKey = null;
+                }
+                tracked.DailySessionKey = dailyKey;
+                result[date] = tracked.Id;
+            }
+
+            if (newWorkouts.Count > 0)
+            {
+                if (_context.Database.IsRelational())
+                {
+                    // Multi-row INSERT instead of EF change tracking: an
+                    // import creates one session per distinct date (2.5k+ for
+                    // a historical CSV) and EF pays ~2 ms/row client-side.
+                    // Columns/defaults match what EF would write for a new
+                    // Workout (SecondaryGoals serializes to "[]").
+                    var values = new List<string>(newWorkouts.Count);
+                    var parameters = new List<MySqlConnector.MySqlParameter>(newWorkouts.Count * 6);
+                    for (var i = 0; i < newWorkouts.Count; i++)
+                    {
+                        var w = newWorkouts[i];
+                        values.Add($"(@w{i}_id,@w{i}_date,@w{i}_type,@w{i}_user,@w{i}_key,@w{i}_goals)");
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_id", w.Id));
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_date", w.Date!.Value));
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_type", w.Type));
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_user", w.UserId));
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_key", w.DailySessionKey));
+                        parameters.Add(new MySqlConnector.MySqlParameter($"@w{i}_goals", "[]"));
+                    }
+
+                    var sql =
+                        "INSERT INTO Workouts (Id, Date, Type, UserId, DailySessionKey, SecondaryGoals) VALUES "
+                        + string.Join(",", values);
+                    try
+                    {
+                        await _context.Database.ExecuteSqlRawAsync(sql, parameters, cancellationToken);
+                    }
+                    catch (MySqlConnector.MySqlException ex)
+                    {
+                        // A concurrent import computed the same DailySessionKey
+                        // and raced us on IX_Workouts_DailySessionKey
+                        // (t_633ebd61). ExecuteSqlRawAsync throws MySqlException
+                        // directly, so surface it as DbUpdateException to
+                        // activate the serialized fallback below — same pattern
+                        // as CsvImportPipeline.InsertBatchAsync.
+                        throw new DbUpdateException(
+                            "Bulk daily-session insert raced a concurrent import", ex);
+                    }
+                }
+                else
+                {
+                    _context.Workouts.AddRange(newWorkouts);
+                }
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            return result;
+        }
+        catch (DbUpdateException)
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                // Detach the failed transaction before the caller retries:
+                // the retry starts a new transaction on this context, and EF
+                // refuses BeginTransaction while a (rolled-back) one is still
+                // attached.
+                await transaction.DisposeAsync();
+                transaction = null;
+            }
+            _context.ChangeTracker.Clear();
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
+    }
+
     public async Task<List<int>> GetRecentExerciseTypeIdsAsync(
         string userId,
         Guid? excludedWorkoutId,

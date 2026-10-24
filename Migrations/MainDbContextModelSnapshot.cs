@@ -356,9 +356,9 @@ namespace healthspan_api.Migrations
 
                     b.HasIndex("SourceTemplateExerciseId");
 
-                    b.HasIndex("TypeId");
-
                     b.HasIndex("WorkoutId");
+
+                    b.HasIndex("TypeId", "WorkoutId");
 
                     b.ToTable("Exercises");
                 });

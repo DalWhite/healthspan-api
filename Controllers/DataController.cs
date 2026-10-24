@@ -1,4 +1,3 @@
-using healthspan_api.Persistence.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Services;
@@ -10,21 +9,18 @@ public class DataController : ControllerBase
 {
     private readonly CsvService _csvService;
     private readonly CurrentUserProvider _userProvider;
-    private readonly ExercisesRepository _exercisesRepository;
-    private readonly WorkoutsRepository _workoutsRepository;
+    private readonly CsvImportJobService _importJobs;
     private readonly UserDataExportService _exportService;
 
     public DataController(
         CsvService csvService,
         CurrentUserProvider userProvider,
-        ExercisesRepository exercisesRepository,
-        WorkoutsRepository workoutsRepository,
+        CsvImportJobService importJobs,
         UserDataExportService exportService)
     {
         _csvService = csvService;
         _userProvider = userProvider;
-        _exercisesRepository = exercisesRepository;
-        _workoutsRepository = workoutsRepository;
+        _importJobs = importJobs;
         _exportService = exportService;
     }
 
@@ -49,10 +45,13 @@ public class DataController : ControllerBase
             $"healthspan-export-{DateTime.UtcNow:yyyyMMdd}.json");
     }
 
+    /// <summary>
+    /// Accepts a CSV and starts a background import job (t_c1f8e6ac contract
+    /// from t_37acc65b §4): 202 + jobId instead of a synchronous import that
+    /// dies on the FE 300 s timeout past ~5k rows.
+    /// </summary>
     [HttpPost("import")]
-    public async Task<IActionResult> ImportExercisesCsvData(
-        IFormFile file,
-        CancellationToken cancellationToken)
+    public IActionResult ImportExercisesCsvData(IFormFile file)
     {
         if (file == null || file.Length == 0)
         {
@@ -64,32 +63,44 @@ public class DataController : ControllerBase
         {
             return BadRequest("File must be a CSV.");
         }
-        var exerciseGroups = _csvService.ReadCsvExercisesAndGroupByDate(file);
-        await AddExercisesToDatabaseAsync(
-            exerciseGroups,
-            cancellationToken);
 
-        return Ok("Data imported successfully.");
+        if (file.Length > CsvService.MaxImportBytes)
+        {
+            return BadRequest($"File too large (max {CsvService.MaxImportBytes / 1024 / 1024} MB).");
+        }
+
+        CsvImportParseResult parsed;
+        try
+        {
+            using var stream = file.OpenReadStream();
+            parsed = _csvService.ParseCsvRows(stream);
+        }
+        catch (Exception)
+        {
+            return BadRequest("Could not read the CSV file.");
+        }
+
+        if (parsed.StructuralErrors.Count > 0)
+        {
+            return BadRequest(new { errors = parsed.StructuralErrors });
+        }
+
+        var userId = _userProvider.GetCurrentUserId();
+        var job = _importJobs.Start(userId, parsed.Rows, parsed.Errors);
+
+        return Accepted(new { jobId = job.Id, total = job.Total });
     }
 
-    private async Task AddExercisesToDatabaseAsync(
-        Dictionary<DateTime, List<Exercise>> exerciseGroups,
-        CancellationToken cancellationToken)
+    [HttpGet("import/{jobId}")]
+    public IActionResult GetImportJobStatus(string jobId)
     {
         var userId = _userProvider.GetCurrentUserId();
-        foreach (var group in exerciseGroups)
+        var job = _importJobs.Find(jobId, userId);
+        if (job is null)
         {
-            var result = await _workoutsRepository
-                .GetOrCreateWorkoutSessionAsync(
-                    userId,
-                    DateOnly.FromDateTime(group.Key),
-                    "Training",
-                    cancellationToken);
-            foreach (var ex in group.Value)
-            {
-                ex.WorkoutId = result.Workout.Id;
-                _exercisesRepository.AddExercise(ex, userId);
-            }
+            return NotFound();
         }
+
+        return Ok(job.ToStatusDto(CsvImportJobService.MaxErrorsExposed));
     }
 }
