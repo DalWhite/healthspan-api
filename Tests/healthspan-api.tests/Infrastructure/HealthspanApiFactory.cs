@@ -21,6 +21,9 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
     public const string TestUserId = "test-user-001";
     public const string TestUserEmail = "test@healthspan.dev";
 
+    /// <summary>Per-factory fake billing gateway so tests can inspect gateway calls.</summary>
+    public FakeBillingGateway BillingGateway { get; } = new();
+
     private readonly string _databaseName = $"HealthspanTestDb_{Guid.NewGuid():N}";
 
     /// <summary>Set to share one in-memory store across factory instances
@@ -57,6 +60,9 @@ public class HealthspanApiFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IBloodTestDocumentStorage>();
             services.AddScoped<IBloodTestDocumentStorage>(_ => Substitute.For<IBloodTestDocumentStorage>());
+
+            services.RemoveAll<IBillingGateway>();
+            services.AddScoped<IBillingGateway>(_ => BillingGateway);
 
             // Background workers must not outlive or mutate an integration test database.
             services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>();
