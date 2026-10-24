@@ -137,7 +137,8 @@ public sealed class FakeBillingGateway : IBillingGateway
     {
         var ts = timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        var signature = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{ts}.{payload}")));
+        // Stripe emits v1 as lowercase hex; the fake gateway must match the real format.
+        var signature = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{ts}.{payload}"))).ToLowerInvariant();
         return $"t={ts},v1={signature}";
     }
 }

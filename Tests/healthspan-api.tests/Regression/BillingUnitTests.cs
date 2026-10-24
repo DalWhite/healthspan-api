@@ -14,7 +14,41 @@ public class StripeWebhookVerifierTests
     private static string Sign(string payload, long timestamp, string secret = Secret)
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{timestamp}.{payload}")));
+        // Stripe emits v1 signatures as lowercase hex; sign the way Stripe signs.
+        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{timestamp}.{payload}"))).ToLowerInvariant();
+    }
+
+    // QA-B1 regression (t_c95d1623): a Stripe-style lowercase-hex v1 must verify.
+    // Before the fix the verifier compared its uppercase Convert.ToHexString() byte-by-byte
+    // against the received candidate, so every real Stripe webhook was rejected with 400.
+    [Fact]
+    public void StripeStyleLowercaseHexSignature_IsAccepted()
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var lowercase = Sign(Payload, timestamp);
+        lowercase.Should().MatchRegex("^[0-9a-f]{64}$");
+
+        var act = () => StripeWebhookVerifier.Verify(
+            Payload,
+            $"t={timestamp},v1={lowercase}",
+            Secret);
+
+        act.Should().NotThrow(
+            "Stripe sends v1 signatures as lowercase hex; a genuine Stripe webhook must verify");
+    }
+
+    // Uppercase hex must also verify (case-insensitive comparison), so no caller regresses.
+    [Fact]
+    public void UppercaseHexSignature_IsAlsoAccepted()
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var act = () => StripeWebhookVerifier.Verify(
+            Payload,
+            $"t={timestamp},v1={Sign(Payload, timestamp).ToUpperInvariant()}",
+            Secret);
+
+        act.Should().NotThrow();
     }
 
     [Fact]
