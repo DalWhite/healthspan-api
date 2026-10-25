@@ -284,6 +284,19 @@ public class ActivitiesController : ControllerBase
             _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
         };
 
+    /// <summary>
+    /// Read-path normalization for the decimal activity columns (t_e395b7be).
+    /// Pomelo's reader reconstructs decimal(65,30) values with double-derived
+    /// noise (stored 85.5 is handed back as a scale-28 decimal equal to
+    /// 85.4999999999999999999999999999), and a direct (double?) cast then emits
+    /// 85.49999999999999 / 33.300000000000004 / 80.49999999999999 in JSON.
+    /// Rounding to the domain's meaningful precision before the cast absorbs
+    /// that noise and also strips the scale tail (7 -> 7, not 7.00000...),
+    /// so the double exposure from PR #22 stays. Write path untouched.
+    /// </summary>
+    public static double? ToCleanDouble(decimal? value)
+        => value.HasValue ? (double)Math.Round(value.Value, 6) : null;
+
     private static WellnessActivityUpdateInput MapInput(WellnessActivityWriteResource resource)
         => new()
         {
@@ -309,9 +322,9 @@ public class ActivitiesController : ControllerBase
             // DateTimeOffset cast, so GET emits '...Z' with no timezone drift.
             OccurredOnUtc = ToUtc(activity.OccurredOnUtc).ToUniversalTime(),
             DurationMinutes = activity.DurationMinutes,
-            FrequencyPerWeek = (double?)activity.FrequencyPerWeek,
-            Intensity = (double?)activity.Intensity,
-            TemperatureCelsius = (double?)activity.TemperatureCelsius,
+            FrequencyPerWeek = ToCleanDouble(activity.FrequencyPerWeek),
+            Intensity = ToCleanDouble(activity.Intensity),
+            TemperatureCelsius = ToCleanDouble(activity.TemperatureCelsius),
             Cycles = activity.Cycles,
             Notes = activity.Notes,
             Metadata = activity.Metadata,
