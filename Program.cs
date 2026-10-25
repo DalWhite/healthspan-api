@@ -28,6 +28,7 @@ builder.Services.Configure<AzureDocumentIntelligenceSettings>(builder.Configurat
 builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration);
 builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection(StripeSettings.SectionName));
 builder.Services.Configure<healthspan_api.Options.SponsoredOffersSettings>(builder.Configuration);
+builder.Services.Configure<healthspan_api.Options.DevQaSeedSettings>(builder.Configuration.GetSection(healthspan_api.Options.DevQaSeedSettings.SectionName));
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -237,6 +238,17 @@ await using (var scope = app.Services.CreateAsyncScope())
 
         // Healthspan Premium plans (billing MVP, t_c0e8a770).
         await BillingPlanSeeder.UpsertAsync(db);
+
+        // QA seed account (t_ebb6967c). DISABLED by default; only the dev
+        // deploy pipeline sets DevQaSeed:Enabled=true. Production never seeds it.
+        var devQaSeedSettings = scope.ServiceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<healthspan_api.Options.DevQaSeedSettings>>()
+            .Value;
+        if (devQaSeedSettings.Enabled)
+        {
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            await DevQaAccountSeeder.UpsertAsync(db, userManager, devQaSeedSettings);
+        }
     }
     catch (Exception ex)
     {
