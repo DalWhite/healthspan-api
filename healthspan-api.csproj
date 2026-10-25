@@ -5,7 +5,7 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <RootNamespace>healthspan_api</RootNamespace>
     <UserSecretsId>cdff54ea-6358-4d8b-8371-f0adcaa33394</UserSecretsId>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Tests/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests/**;Tools/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
