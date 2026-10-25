@@ -46,7 +46,7 @@ public class ActivitiesTests : ApiTestBase
         created.Type.Should().Be("sauna");
         created.Dimension.Should().Be(WellnessDimension.Health);
         created.DurationMinutes.Should().Be(20);
-        created.TemperatureCelsius.Should().Be(85m);
+        created.TemperatureCelsius.Should().Be(85d);
         created.Cycles.Should().Be(3);
         created.Metadata.Should().NotBeNull();
         created.Metadata!.Should().ContainKey("humidity_percent");
@@ -280,7 +280,7 @@ public class ActivitiesTests : ApiTestBase
         var getResponse = await Client.GetAsync($"/api/activities/{created.Id}");
         var resource = await getResponse.Content.ReadFromJsonAsync<WellnessActivityResource>();
         resource!.DurationMinutes.Should().Be(45);
-        resource.Intensity.Should().Be(4m);
+        resource.Intensity.Should().Be(4d);
         resource.Dimension.Should().Be(WellnessDimension.Mobility);
         resource.Metadata!["technique"]!.ToString().Should().Be("body scan");
 

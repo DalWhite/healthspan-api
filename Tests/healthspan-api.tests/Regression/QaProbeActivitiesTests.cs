@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -279,5 +280,44 @@ public class QaProbeActivitiesTests : ApiTestBase
                 Encoding.UTF8, "application/json"));
         out_.WriteLine("P10 FE unknown fields -> " + await Observe(unknown));
         unknown.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task P11_read_serialization_utc_Z_and_clean_decimals()
+    {
+        // QA-C F1 (t_dbb640bd): GET responses must carry the 'Z' UTC designator
+        // (MySQL/EF return Kind=Unspecified without a converter) and must not
+        // leak MySQL decimal scale (intensity 7 -> "7", not 7.000000000000000000…).
+        var created = await Client.PostAsJsonAsync("/api/activities", new
+        {
+            type = "other",
+            dimension = "health",
+            occurredOnUtc = "2026-10-24T18:30:00Z",
+            durationMinutes = 20,
+            frequencyPerWeek = 3,
+            intensity = 7,
+            temperatureCelsius = 85,
+            cycles = 3,
+            metadata = new { probe = "read-serialize" }
+        });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdBody = await created.Content.ReadAsStringAsync();
+        var id = JsonDocument.Parse(createdBody).RootElement.GetProperty("id").GetGuid();
+
+        var byId = await Client.GetAsync($"/api/activities/{id}");
+        byId.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byIdBody = await byId.Content.ReadAsStringAsync();
+        out_.WriteLine($"P11 GET /api/activities/{id} -> {byIdBody}");
+        byIdBody.Should().Contain("\"occurredOnUtc\":\"2026-10-24T18:30:00Z\"");
+        byIdBody.Should().MatchRegex("\"createdAtUtc\":\"[0-9T:.-]+Z\"");
+        byIdBody.Should().Contain("\"intensity\":7").And.NotContain("7.0");
+        byIdBody.Should().Contain("\"temperatureCelsius\":85").And.NotContain("85.0");
+        byIdBody.Should().Contain("\"frequencyPerWeek\":3").And.NotContain("3.0");
+
+        var list = await Client.GetAsync("/api/activities?page=1&pageSize=5");
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listBody = await list.Content.ReadAsStringAsync();
+        out_.WriteLine($"P11 GET list -> {(listBody.Length > 600 ? listBody[..600] + "…" : listBody)}");
+        listBody.Should().MatchRegex("\"occurredOnUtc\":\"[0-9T:.-]+Z\"");
     }
 }

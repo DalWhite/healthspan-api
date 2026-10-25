@@ -305,15 +305,17 @@ public class ActivitiesController : ControllerBase
             Id = activity.Id,
             Type = activity.Type,
             Dimension = activity.Dimension,
-            OccurredOnUtc = activity.OccurredOnUtc,
+            // ToUtc fixes Kind=Unspecified coming from MySQL/EF before the
+            // DateTimeOffset cast, so GET emits '...Z' with no timezone drift.
+            OccurredOnUtc = ToUtc(activity.OccurredOnUtc).ToUniversalTime(),
             DurationMinutes = activity.DurationMinutes,
-            FrequencyPerWeek = activity.FrequencyPerWeek,
-            Intensity = activity.Intensity,
-            TemperatureCelsius = activity.TemperatureCelsius,
+            FrequencyPerWeek = (double?)activity.FrequencyPerWeek,
+            Intensity = (double?)activity.Intensity,
+            TemperatureCelsius = (double?)activity.TemperatureCelsius,
             Cycles = activity.Cycles,
             Notes = activity.Notes,
             Metadata = activity.Metadata,
-            CreatedAtUtc = activity.CreatedAtUtc
+            CreatedAtUtc = ToUtc(activity.CreatedAtUtc).ToUniversalTime()
         };
 
     private static ObjectResult ActivityNotFound()
