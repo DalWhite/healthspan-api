@@ -64,6 +64,25 @@ public sealed class HealthProfileService(
         if (resource.WeightKg.HasValue)
         {
             user.Weight = resource.WeightKg;
+
+            // K2 time series (t_358e09e9): every registered weight also writes
+            // a BodyCompositionReading in the SAME SaveChanges — the scalar and
+            // the series can never diverge. No synthetic seeding otherwise.
+            var definition = await BodyCompositionCatalog.EnsureWeightKgDefinitionAsync(
+                context,
+                cancellationToken);
+
+            var now = DateTime.UtcNow;
+            context.BodyCompositionReadings.Add(new BodyCompositionReading
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                HealthMetricDefinitionId = definition.Id,
+                Value = resource.WeightKg.Value,
+                Source = BodyCompositionReadingSources.Manual,
+                OccurredOnUtc = now,
+                CreatedAtUtc = now
+            });
         }
         await context.SaveChangesAsync(cancellationToken);
         await bloodAnalyticsService

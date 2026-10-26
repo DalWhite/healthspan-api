@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Services;
 
 namespace healthspan_api.tests;
 
@@ -52,6 +53,11 @@ public static class TestDataSeeder
         SeedBloodTests(db);
 
         await db.SaveChangesAsync();
+
+        // Monthly results KPIs need the metric definition + the seeded basics.
+        // Must run AFTER the types are saved: UpsertAsync queries the store.
+        await BodyCompositionCatalogSeeder.UpsertAsync(db);
+        await StrengthBasicsCatalogSeeder.UpsertAsync(db);
     }
 
     private static async Task SeedUser(UserManager<User> userManager)

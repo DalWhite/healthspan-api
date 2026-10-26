@@ -138,6 +138,7 @@ builder.Services.AddScoped<GalpinAssessmentsRepository>();
 builder.Services.AddScoped<WellnessActivitiesRepository>();
 builder.Services.AddScoped<WellnessActivityService>();
 builder.Services.AddScoped<ExerciseMetricsService>();
+builder.Services.AddScoped<ResultsService>();
 builder.Services.AddScoped<WeeklyTrainingSummaryService>();
 builder.Services.AddScoped<TrainingTrackerAnalyticsService>();
 builder.Services.AddScoped<RoutinePlanService>();
@@ -238,6 +239,16 @@ await using (var scope = app.Services.CreateAsyncScope())
 
         // Healthspan Premium plans (billing MVP, t_c0e8a770).
         await BillingPlanSeeder.UpsertAsync(db);
+
+        // Monthly health KPIs (t_358e09e9/t_4882e760): the weight_kg metric
+        // definition and the seeded (editable) "basic" strength tag set.
+        // Relational only: the integration-test host (InMemory) is seeded by
+        // TestDataSeeder instead, and must own the exercise-type baseline.
+        if (db.Database.IsRelational())
+        {
+            await BodyCompositionCatalogSeeder.UpsertAsync(db);
+            await StrengthBasicsCatalogSeeder.UpsertAsync(db);
+        }
 
         // QA seed account (t_ebb6967c). DISABLED by default; only the dev
         // deploy pipeline sets DevQaSeed:Enabled=true. Production never seeds it.
