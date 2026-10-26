@@ -191,9 +191,17 @@ public class WeightReadNoiseTests : ApiTestBase
 
         var body = await (await Client.GetAsync($"/Workouts/{workoutId}")).Content.ReadAsStringAsync();
         body.Should().Contain("\"weight\":85.5");
-        body.Should().Contain("\"bodyWeight\":null",
+        // t_101e2b0a: null fields are omitted from JSON entirely (global
+        // WhenWritingNull), so "collapsed by design" now means the key is
+        // absent — a client reading it back still gets null. The body carries
+        // probe rows that DO have the breakdown, so assert on the Standard row.
+        using var doc = JsonDocument.Parse(body);
+        var standardRow = doc.RootElement.GetProperty("exercises").EnumerateArray()
+            .First(exercise => exercise.GetProperty("typeId").GetInt32()
+                == TestDataSeeder.BenchPressTypeId);
+        standardRow.TryGetProperty("bodyWeight", out _).Should().BeFalse(
             "Standard types collapse the breakdown by design (CalculateComputedValues)");
-        body.Should().Contain("\"addedWeight\":null");
+        standardRow.TryGetProperty("addedWeight", out _).Should().BeFalse();
     }
 
     [Fact]

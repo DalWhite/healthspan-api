@@ -96,7 +96,12 @@ builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddEndpointsApiExplorer();
 
-builder.Services.AddControllers();
+// t_101e2b0a: null-omission — a null field carries no information and cost
+// ~1.2KB per 10 history rows; clients (System.Text.Json web defaults) read a
+// missing property exactly as null.
+builder.Services.AddControllers().AddJsonOptions(options =>
+    options.JsonSerializerOptions.DefaultIgnoreCondition =
+        System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull);
 
 builder.Services.AddDbContext<MainDbContext>(options => 
     options.UseMySql(
@@ -115,7 +120,7 @@ builder.Services.AddCors(options =>
         options.AddPolicy(name: CorsPolicyName,
                           policyBuilder =>
                           {
-                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net", "http://localhost:5000")
+                              policyBuilder.WithOrigins("https://localhost:5001", "https://salmon-island-045222d03.4.azurestaticapps.net", "http://localhost:5000", "http://localhost:8080")
                                            .AllowAnyMethod()
                                            .AllowAnyHeader()
                                            .WithExposedHeaders("X-Total-Count");

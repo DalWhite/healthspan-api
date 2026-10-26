@@ -18,6 +18,7 @@ public class WorkoutsController : ControllerBase
     private readonly WeeklyTrainingSummaryService _weeklyTrainingSummaryService;
     private readonly RoutineAdherenceService _routineAdherenceService;
     private readonly RoutinesRepository _routinesRepository;
+    private readonly HealthProfileService _healthProfileService;
     private readonly ILogger<WorkoutsController> _logger;
 
     public WorkoutsController(
@@ -30,6 +31,7 @@ public class WorkoutsController : ControllerBase
         WeeklyTrainingSummaryService weeklyTrainingSummaryService,
         RoutineAdherenceService routineAdherenceService,
         RoutinesRepository routinesRepository,
+        HealthProfileService healthProfileService,
         ILogger<WorkoutsController> logger)
     {
         _workoutsRepository = workoutRepository;
@@ -41,6 +43,7 @@ public class WorkoutsController : ControllerBase
         _weeklyTrainingSummaryService = weeklyTrainingSummaryService;
         _routineAdherenceService = routineAdherenceService;
         _routinesRepository = routinesRepository;
+        _healthProfileService = healthProfileService;
         _logger = logger;
     }
     [HttpGet]
@@ -397,6 +400,79 @@ public class WorkoutsController : ControllerBase
             return Unexpected(
                 "Failed to load the day's workouts.",
                 ex);
+        }
+    }
+
+    [HttpGet("today/page")]
+    public async Task<ActionResult<TodayWorkoutPageResource>> GetTodayPage(
+        string traineeId,
+        DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // One round-trip for the whole Today screen (t_101e2b0a): sessions,
+            // recent context, per-type previous loads and body weight.
+            if (ResolveTargetUserId(traineeId, out var userId) is { } accessError)
+            {
+                return accessError;
+            }
+
+            var sessionDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var workouts = await _workoutsRepository.GetWorkoutSessionsForDateAsync(
+                userId, sessionDate, cancellationToken);
+            var sessions = new List<WorkoutSessionResource>(workouts.Count);
+            foreach (var workout in workouts)
+            {
+                sessions.Add(await MapSessionAsync(workout, userId, cancellationToken));
+            }
+
+            var history = await _workoutsRepository.GetWorkoutHistoryAsync(
+                userId,
+                from: null,
+                to: null,
+                page: 1,
+                pageSize: 14,
+                cancellationToken: cancellationToken);
+            // Empty placeholder days are not worth repeating or showing — same
+            // filter the client used to apply client-side. The history query
+            // already eager-loads exercises, so no per-workout detail call here.
+            var filled = history.Workouts
+                .Where(workout => (workout.Exercises?.Count ?? 0) > 0)
+                .ToList();
+
+            // "Anterior" baselines come from the two most recent logged
+            // sessions, exactly as the client used to compute them from
+            // /Workouts/{id} x2.
+            var previousLoads = new Dictionary<int, WorkoutHistoryExerciseResource>();
+            foreach (var exercise in filled.Take(2)
+                         .SelectMany(workout => workout.Exercises ?? []))
+            {
+                if (exercise.TypeId is not { } typeId
+                    || previousLoads.ContainsKey(typeId))
+                {
+                    continue;
+                }
+
+                if (exercise.Series > 0 || exercise.Repetitions > 0 || exercise.Weight > 0)
+                {
+                    previousLoads[typeId] = MapWorkoutHistoryExercise(exercise);
+                }
+            }
+
+            var profile = await _healthProfileService.GetAsync(userId, cancellationToken);
+
+            return Ok(new TodayWorkoutPageResource
+            {
+                Sessions = sessions,
+                RecentWorkouts = filled.Select(MapRecentWorkout).ToList(),
+                PreviousLoads = previousLoads,
+                ProfileWeightKg = profile.WeightKg
+            });
+        }
+        catch (Exception ex)
+        {
+            return Unexpected("Failed to load the today page.", ex);
         }
     }
 
@@ -1166,6 +1242,34 @@ public class WorkoutsController : ControllerBase
                         .ToList()
                 })
                 .ToList()
+        };
+    }
+
+    private static TodayRecentWorkoutResource MapRecentWorkout(Workout workout)
+    {
+        var exercises = workout.Exercises ?? [];
+        // Heaviest logged exercise, with the same ordering the Today client
+        // used when it fetched each recent workout in full.
+        var top = exercises
+            .OrderByDescending(exercise =>
+                (exercise.AddedWeight ?? 0) + (exercise.Weight ?? 0))
+            .FirstOrDefault();
+
+        return new TodayRecentWorkoutResource
+        {
+            Id = workout.Id,
+            Date = workout.Date ?? DateTime.Today,
+            Type = workout.Type,
+            Modality = workout.Modality?.ToString(),
+            BlockLabel = (workout.Blocks ?? [])
+                .OrderBy(block => block.Order)
+                .Select(block => block.Label)
+                .FirstOrDefault(label => !string.IsNullOrWhiteSpace(label)),
+            ExerciseCount = exercises.Count,
+            TopExercise = top is null ? null : MapWorkoutHistoryExercise(top),
+            Attempts = exercises.Sum(exercise => exercise.Attempts ?? 0),
+            CompletedAttempts = exercises.Sum(
+                exercise => exercise.CompletedAttempts ?? 0)
         };
     }
 

@@ -64,7 +64,8 @@ public class ActivitiesController : ControllerBase
         DateTime? from,
         DateTime? to,
         int page = 1,
-        int pageSize = 10)
+        int pageSize = 10,
+        string? fields = null)
     {
         try
         {
@@ -93,6 +94,21 @@ public class ActivitiesController : ControllerBase
             var userId = _currentUserProvider.GetCurrentUserId();
             var (activities, total) = _activityService.GetActivities(
                 userId, type, dimension, from, to, page, pageSize);
+
+            // t_101e2b0a: ?fields=minimal returns the list projection the
+            // history screen actually renders; the full resource is fetched
+            // per row on demand (detail sheet / edit), never 100 times per page.
+            if (string.Equals(fields, "minimal", StringComparison.OrdinalIgnoreCase))
+            {
+                return Ok(new PagedActivitiesSummaryResource
+                {
+                    Items = activities.Select(MapActivitySummary).ToList(),
+                    Total = total,
+                    Page = page,
+                    PageSize = pageSize,
+                    HasMore = page * pageSize < total
+                });
+            }
 
             return Ok(new PagedActivitiesResource
             {
@@ -329,6 +345,21 @@ public class ActivitiesController : ControllerBase
             Notes = activity.Notes,
             Metadata = activity.Metadata,
             CreatedAtUtc = ToUtc(activity.CreatedAtUtc).ToUniversalTime()
+        };
+
+    private static WellnessActivitySummaryResource MapActivitySummary(
+        WellnessActivity activity)
+        => new()
+        {
+            Id = activity.Id,
+            Type = activity.Type,
+            Dimension = activity.Dimension,
+            OccurredOnUtc = ToUtc(activity.OccurredOnUtc).ToUniversalTime(),
+            DurationMinutes = activity.DurationMinutes,
+            FrequencyPerWeek = (double?)activity.FrequencyPerWeek,
+            Intensity = (double?)activity.Intensity,
+            TemperatureCelsius = (double?)activity.TemperatureCelsius,
+            Cycles = activity.Cycles
         };
 
     private static ObjectResult ActivityNotFound()
