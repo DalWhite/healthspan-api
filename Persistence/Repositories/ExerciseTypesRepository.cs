@@ -46,14 +46,17 @@ public class ExerciseTypesRepository
     /// <summary>
     /// Paged flat projection for list screens. It is not a narrowed "include":
     /// the query selects only the columns the library and the exercise pickers
-    /// read (no Description, no nested Variations copy), resolves favourites with
-    /// an EXISTS, and pages in SQL. The full catalog is 1.4MB / 549KB slim, and
-    /// parsing that much JSON in WASM blocked the main thread for seconds before
-    /// the library could paint (t_81a400b3), so the client asks for one page at a
-    /// time and hydrates the rest in the background.
+    /// read (no nested Variations copy), resolves favourites with an EXISTS, and
+    /// pages in SQL. The whole catalog is 1.4MB / 549KB slim, and parsing that much
+    /// JSON in WASM blocked the main thread for seconds before the library could
+    /// paint (t_81a400b3), so the client asks for one page at a time and hydrates
+    /// the rest in the background.
+    /// <paramref name="includeDescription"/> adds the editorial Description column
+    /// for that background hydration: it is what search-by-description reads, and
+    /// it is the copy the offline mirror has to keep.
     /// </summary>
     public async Task<(List<ExerciseType> Items, int Total)> GetExerciseListPageAsync(
-        string userId, bool? favourite, int skip, int take)
+        string userId, bool? favourite, int skip, int take, bool includeDescription)
     {
         var source = _context.ExerciseTypes.AsNoTracking();
 
@@ -77,6 +80,7 @@ public class ExerciseTypesRepository
             {
                 Id = et.Id,
                 Name = et.Name,
+                Description = includeDescription ? et.Description : null,
                 ImageRoute = et.ImageRoute,
                 WeightType = et.WeightType,
                 ParentExerciseTypeId = et.ParentExerciseTypeId,

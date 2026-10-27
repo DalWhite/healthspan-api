@@ -37,14 +37,20 @@ public class ExerciseTypesController : ControllerBase
         {
             // TraineeAccess validated and rewrote userId with the resolved target id.
             // fields=minimal serves the flat, description-free projection the list
-            // screens (library, exercise pickers) actually read, paged in SQL: the
-            // full payload is 1.4MB and parsing it in WASM blocked the main thread
-            // for seconds before the first screen of cards could paint.
-            if (string.Equals(fields, "minimal", StringComparison.OrdinalIgnoreCase))
+            // screens paint with, paged in SQL: the whole payload is 1.4MB and parsing
+            // it in WASM blocked the main thread for seconds before the first screen of
+            // cards could paint. fields=full is the same flat projection plus
+            // Description — the client hydrates the rest of the catalog with it in the
+            // background, so search by description keeps working and the offline mirror
+            // stores complete rows. Neither projection nests Variations: every variation
+            // is a row of its own page.
+            var projection = fields?.Trim().ToLowerInvariant();
+            if (projection is "minimal" or "full")
             {
                 var pageSkip = Math.Max(0, skip ?? 0);
                 var pageTake = Math.Clamp(take ?? 40, 1, 200);
-                var page = await _exerciseTypeRepository.GetExerciseListPageAsync(userId, favourite, pageSkip, pageTake);
+                var page = await _exerciseTypeRepository.GetExerciseListPageAsync(
+                    userId, favourite, pageSkip, pageTake, includeDescription: projection == "full");
                 Response.Headers["X-Total-Count"] = page.Total.ToString();
                 Response.Headers["Access-Control-Expose-Headers"] = "X-Total-Count";
 
