@@ -30,11 +30,29 @@ public class ExerciseTypesController : ControllerBase
 
     [HttpGet]
     [TraineeAccess("userId")]
-    public ActionResult<List<GetExerciseTypeResource>> GetExerciseTypes(bool? favourite, string userId = "")
+    public async Task<ActionResult<List<GetExerciseTypeResource>>> GetExerciseTypes(
+        bool? favourite, string userId = "", string? fields = null, int? skip = null, int? take = null)
     {
         try
         {
             // TraineeAccess validated and rewrote userId with the resolved target id.
+            // fields=minimal serves the flat, description-free projection the list
+            // screens (library, exercise pickers) actually read, paged in SQL: the
+            // full payload is 1.4MB and parsing it in WASM blocked the main thread
+            // for seconds before the first screen of cards could paint.
+            if (string.Equals(fields, "minimal", StringComparison.OrdinalIgnoreCase))
+            {
+                var pageSkip = Math.Max(0, skip ?? 0);
+                var pageTake = Math.Clamp(take ?? 40, 1, 200);
+                var page = await _exerciseTypeRepository.GetExerciseListPageAsync(userId, favourite, pageSkip, pageTake);
+                Response.Headers["X-Total-Count"] = page.Total.ToString();
+                Response.Headers["Access-Control-Expose-Headers"] = "X-Total-Count";
+
+                return Ok(page.Items
+                    .Select(exerciseType => MapExerciseType(exerciseType, userId, includeVariations: false))
+                    .ToList());
+            }
+
             var domainExerciseTypes = _exerciseTypeRepository.GetExerciseTypes();
             var response = domainExerciseTypes
                 .Select(exerciseType => MapExerciseType(exerciseType, userId, includeVariations: true))
