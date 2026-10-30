@@ -34,6 +34,28 @@ internal static class ApiProblemResult
             "The request conflicts with the current state.",
             detail);
 
+    public static ObjectResult Forbidden(string code, string detail)
+        => Create(
+            StatusCodes.Status403Forbidden,
+            code,
+            "This action is not permitted on this instance.",
+            detail);
+
+    /// <summary>Shared 403 payload for the closed-registration gate (t_3798e8dd),
+    /// used by both the /register middleware and the Google auth controller.</summary>
+    public static ProblemDetails RegistrationClosedProblem()
+    {
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status403Forbidden,
+            Title = "Registration is closed on this instance.",
+            Detail = "New accounts can only be created for pre-approved emails. If you already have an account, use sign-in.",
+            Type = "https://httpstatuses.com/403"
+        };
+        problem.Extensions["code"] = "registration_closed";
+        return problem;
+    }
+
     public static ObjectResult Unexpected(string code)
         => Create(
             StatusCodes.Status500InternalServerError,

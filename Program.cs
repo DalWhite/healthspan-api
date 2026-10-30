@@ -29,6 +29,7 @@ builder.Services.Configure<LlmMarkerNormalizationSettings>(builder.Configuration
 builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection(StripeSettings.SectionName));
 builder.Services.Configure<healthspan_api.Options.SponsoredOffersSettings>(builder.Configuration);
 builder.Services.Configure<healthspan_api.Options.DevQaSeedSettings>(builder.Configuration.GetSection(healthspan_api.Options.DevQaSeedSettings.SectionName));
+builder.Services.Configure<healthspan_api.Options.RegistrationSettings>(builder.Configuration.GetSection(healthspan_api.Options.RegistrationSettings.SectionName));
 var googleSettings = builder.Configuration.Get<GoogleAuthSettings>() ?? new GoogleAuthSettings();
 builder.Services.AddMemoryCache();
 
@@ -262,6 +263,56 @@ app.UseRouting();
 app.UseCors(CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Registration gate (t_3798e8dd): MapIdentityApi maps POST /register, which has
+// no hook of its own, so the email allowlist is enforced here. Only account
+// CREATION is gated; /login and /refresh are untouched. The Google paths are
+// gated inside GoogleAuthService (the email is only known after id-token
+// validation).
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsPost(context.Request.Method) &&
+        context.Request.Path.Equals("/register", StringComparison.OrdinalIgnoreCase))
+    {
+        var registration = context.RequestServices
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<healthspan_api.Options.RegistrationSettings>>()
+            .Value;
+        if (registration.IsAllowlistMode)
+        {
+            string? email = null;
+            context.Request.EnableBuffering();
+            try
+            {
+                using var payload = await JsonDocument.ParseAsync(context.Request.Body);
+                if (payload.RootElement.TryGetProperty("email", out var emailElement) &&
+                    emailElement.ValueKind == JsonValueKind.String)
+                {
+                    email = emailElement.GetString();
+                }
+            }
+            catch (JsonException)
+            {
+                // Malformed body: let the Identity endpoint answer 400 as usual.
+            }
+            finally
+            {
+                context.Request.Body.Position = 0;
+            }
+
+            if (!registration.IsNewAccountAllowed(email))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    ApiProblemResult.RegistrationClosedProblem(),
+                    (System.Text.Json.JsonSerializerOptions?)null,
+                    "application/problem+json");
+                return;
+            }
+        }
+    }
+
+    await next();
+});
 
 // Add Swagger middleware
 app.UseSwagger();
