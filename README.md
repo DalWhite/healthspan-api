@@ -57,6 +57,16 @@ Backend for **Healthspan**, a self-hosted personal training & health-tracking pl
 | Health | `/BloodTests` (upload / manual / review / markers / trends), `/GalpinAssessments` (catalog / latest / trends), `/Dashboard/summary`, `/Readiness`, `/Activities` |
 | Billing | `/Billing` (Stripe Checkout sessions + webhook) |
 
+### Registration allowlist (deployed instances)
+
+`Auth:RegistrationMode` gates new-account creation on `POST /register` and the Google
+exchange/callback: `Allowlist` (the default in `appsettings.json`) only creates accounts for
+emails in `Auth:AllowedAccounts` — anything else gets a `403` ProblemDetails with
+`code=registration_closed`. The default is fail-safe: a missing or misspelled mode is treated
+as `Allowlist`. Local development stays `Open` (`appsettings.Development.json`); a dev App
+Service can opt out via the app-setting `Auth:RegistrationMode=Open`. Login for existing
+accounts is never gated.
+
 ## Layout
 
 | Path | What lives there |
