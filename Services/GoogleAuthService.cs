@@ -15,19 +15,27 @@ public class GoogleAuthService
 {
     private readonly UserManager<User> _userManager;
     private readonly IGoogleRefreshTokenProtector _refreshTokenProtector;
+    private readonly Microsoft.Extensions.Options.IOptions<healthspan_api.Options.RegistrationSettings> _registrationSettings;
     private readonly ILogger<GoogleAuthService> _logger;
 
     public GoogleAuthService(
         UserManager<User> userManager,
         IGoogleRefreshTokenProtector refreshTokenProtector,
+        Microsoft.Extensions.Options.IOptions<healthspan_api.Options.RegistrationSettings> registrationSettings,
         ILogger<GoogleAuthService> logger)
     {
         _userManager = userManager;
         _refreshTokenProtector = refreshTokenProtector;
+        _registrationSettings = registrationSettings;
         _logger = logger;
     }
 
-    public async Task<User> UpsertUserAsync(GoogleUserProfile profile, string? refreshToken, CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns the (possibly newly created) user, or null when the account does
+    /// not exist and the registration gate (t_3798e8dd) refuses to create it —
+    /// callers map that to a 403 registration_closed response.
+    /// </summary>
+    public async Task<User?> UpsertUserAsync(GoogleUserProfile profile, string? refreshToken, CancellationToken cancellationToken)
     {
         if (profile is null)
         {
@@ -35,6 +43,10 @@ public class GoogleAuthService
         }
 
         var user = await ResolveUserAsync(profile, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
 
         var requiresUpdate = false;
 
@@ -106,7 +118,7 @@ public class GoogleAuthService
         return new GoogleUserProfile(subject, email, emailVerified, name, picture);
     }
 
-    private async Task<User> ResolveUserAsync(GoogleUserProfile profile, CancellationToken cancellationToken)
+    private async Task<User?> ResolveUserAsync(GoogleUserProfile profile, CancellationToken cancellationToken)
     {
         User? user = null;
 
@@ -123,6 +135,14 @@ public class GoogleAuthService
         if (user is not null)
         {
             return user;
+        }
+
+        // Registration gate (t_3798e8dd): never create accounts outside the
+        // allowlist via the Google exchange/callback paths.
+        if (!_registrationSettings.Value.IsNewAccountAllowed(profile.Email))
+        {
+            _logger.LogWarning("Google registration denied for non-allowlisted email {Email}", profile.Email);
+            return null;
         }
 
         user = new User

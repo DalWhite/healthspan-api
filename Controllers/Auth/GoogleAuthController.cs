@@ -51,6 +51,11 @@ public class GoogleAuthController : ControllerBase
         }
 
         var user = await _googleAuthService.UpsertUserAsync(profile, refreshToken: null, cancellationToken);
+        if (user is null)
+        {
+            return Results.Problem(ApiProblemResult.RegistrationClosedProblem());
+        }
+
         await _localTokenService.IssueTokensAsync(HttpContext, user, captureResponse: false, cancellationToken);
 
         return TypedResults.Empty;
@@ -90,6 +95,14 @@ public class GoogleAuthController : ControllerBase
         var refreshToken = properties.GetTokenValue("refresh_token");
 
         var user = await _googleAuthService.UpsertUserAsync(profile, refreshToken, cancellationToken);
+        if (user is null)
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+            return ApiProblemResult.Forbidden(
+                "registration_closed",
+                "New accounts can only be created for pre-approved emails. If you already have an account, use sign-in.");
+        }
+
         var tokenResponse = await _localTokenService.IssueTokensAsync(HttpContext, user, captureResponse: true, cancellationToken);
 
         await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
