@@ -1,47 +1,75 @@
-# healthspan-api
+# Healthspan API
 
-````
-docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Passw0rd" -p 1433:1433 --name sqlserver -d mcr.microsoft.com/mssql/server:latest 
-docker run -e "MYSQL_ROOT_PASSWORD=Passw0rd" -p 3306:3306 --name mysql -d mysql:latest
-````
+Backend for **Healthspan**, a self-hosted personal training & health-tracking platform. It powers the [Healthspan web app](https://github.com/DalWhite/healthspan-fe) and exposes a REST API for workouts, an exercise catalogue with an offline-first mirror, blood-test analysis (OCR + marker trends), running assessments, readiness and billing.
 
-TODOS:
-- [ ] Return json with id on posts and puts
-- [ ] Allow to add workout relation on post exercises
-- https://barbend.com/how-to-use-rpe-scale-strength-training/
+**Who it's for:** fitness-oriented people who want their training and health data on their own infrastructure, and developers building their own coach/tracking product on top of a ready-made domain model.
 
-## Google Sign-In wiring
+## What it does
 
-- Configure secrets via the flat keys `GoogleClientId`, `GoogleClientSecret`, `GoogleCallbackUri`, `GoogleDefaultReturnUrl`, and optional `GoogleAllowedReturnUrls` (array) in `appsettings.*`, user-secrets, or environment variables.
-- `POST /auth/google/exchange` accepts `{ "idToken": "<Google ID token>" }`, validates with Google, provisions the user locally, then returns the same payload as `/login` (`tokenType`, `accessToken`, `expiresIn`, `refreshToken`).
-- `GET /auth/google/challenge?returnUrl=` starts the PKCE authorization code flow. After Google redirects back to `/auth/google/callback` the API issues local tokens, then redirects to the sanitized return URL with `tokenType`, `accessToken`, `refreshToken`, `expiresIn` query parameters.
-- `POST /refresh` (existing Identity endpoint) works for Google sessions because they use the same bearer-token issuance path as email/password accounts.
-- Claim mapping: `/manage/info` still returns `email`/`isEmailConfirmed`, and the issued access tokens add `ClaimTypes.Name` + `picture` so the SPA can hydrate display name/photo from the same response cycle.
-- Calling `/Logout` signs the current user out and attempts to revoke any stored Google refresh token (`https://oauth2.googleapis.com/revoke`) before clearing the local session.
+- **Auth** — email/password and Google sign-in (PKCE), JWT access + refresh tokens.
+- **Training** — workouts, exercise library (~1,000 seeded exercise types), routines, trainer/trainee relationships, CSV workout import, and a sync endpoint that feeds the PWA's offline SQLite mirror.
+- **Health analytics** — blood-test uploads with OCR extraction (Azure Document Intelligence) and optional LLM marker normalization; marker history and trends; Galpin running-adaptation assessments; readiness and wellness activities.
+- **Billing** — Stripe Checkout + webhooks (optional, disabled unless configured).
+- Uploaded documents are archived to Azure Blob Storage or, when disabled, the local filesystem.
 
-## Phase 1 health analytics foundation
+## Built with
 
-- New endpoints:
-	- `GET /BloodTests`
-	- `GET /BloodTests/pending-review`
-	- `GET /BloodTests/{id}`
-	- `POST /BloodTests/manual`
-	- `POST /BloodTests/upload`
-	- `POST /BloodTests/{id}/review`
-	- `GET /BloodTests/markers/latest`
-	- `GET /BloodTests/markers/{metricKey}/trends`
-	- `GET /GalpinAssessments/catalog`
-	- `GET /GalpinAssessments`
-	- `GET /GalpinAssessments/latest`
-	- `GET /GalpinAssessments/trends/{adaptation}`
-	- `POST /GalpinAssessments`
-	- `GET /Dashboard/summary`
-	- Uploaded documents are archived to Azure Blob Storage when blob storage is enabled. If blob storage is disabled, the API falls back to filesystem storage under the configured base path or the App Service `HOME/data/blood-test-results` directory.
-- Configure Azure OCR with flat settings: `AzureDocumentIntelligenceEnabled`, `AzureDocumentIntelligenceEndpoint`, `AzureDocumentIntelligenceApiKey`, and `AzureDocumentIntelligenceModelId`.
-	- Configure Azure Blob Storage with flat settings: `AzureBlobStorageEnabled`, `AzureBlobStorageConnectionString`, and `AzureBlobStorageContainerName`.
-	- Configure filesystem storage with flat settings: `FileSystemDocumentStorageEnabled` and optional `FileSystemDocumentStorageBasePath`.
-	- Optional LLM post-processing can normalize OCR output before review using flat settings: `LlmMarkerNormalizationEnabled`, `LlmMarkerNormalizationProvider`, `LlmMarkerNormalizationApiKey`, `LlmMarkerNormalizationModel`, `LlmMarkerNormalizationBaseUrl`, `LlmMarkerNormalizationPromptVersion`, `LlmMarkerNormalizationSiteUrl`, `LlmMarkerNormalizationAppName`, `LlmMarkerNormalizationMaxOcrChars`, `LlmMarkerNormalizationMaxCandidateMarkers`, `LlmMarkerNormalizationChunkSize`, `LlmMarkerNormalizationTemperature`, `LlmMarkerNormalizationMaxOutputTokens`, `LlmMarkerNormalizationTimeoutSeconds`, `LlmMarkerNormalizationLogPayloads`, and `LlmMarkerNormalizationLogPayloadMaxChars`.
-	- If a large normalization response is truncated, the OpenRouter provider automatically retries in chunks and recursively splits failing chunks into smaller batches.
-	- OpenRouter is wired as the current provider behind `IMarkerNormalizationProvider`, so adding Ollama later only requires a new provider class plus one selector case.
-	- Uploaded blood tests are persisted even when OCR is disabled, and remain in `PendingReview` for manual follow-up. OCR-extracted marker candidates are suggestions only and should be finalized through the review endpoint. If blob storage is disabled and filesystem storage is enabled, the original file is archived on the App Service file system instead.
-	- When LLM normalization is enabled, deterministic OCR remains the fallback path and combined OCR + LLM audit data is stored in `RawExtractionPayload`.
+- .NET 9 / ASP.NET Core MVC + ASP.NET Core Identity
+- Entity Framework Core + MySQL/MariaDB (code-first migrations)
+- Azure Document Intelligence (optional OCR), OpenRouter (optional LLM post-processing), Stripe (optional billing)
+- xUnit test suite under `Tests/`
+
+## Running it locally
+
+1. Start a database (MariaDB 11 is fine):
+
+   ```bash
+   docker run -e "MARIADB_ROOT_PASSWORD=***" -e "MARIADB_DATABASE=HealthspanDb" \
+     -p 3306:3306 --name healthspan-db -d mariadb:11
+   ```
+
+2. Configure settings. `appsettings.json` ships with empty placeholders; real values go into user-secrets or environment variables (see [.env.example](.env.example) for the full list):
+
+   ```bash
+   dotnet user-secrets set "DbConnectionString" "Server=localhost;Database=HealthspanDb;User ID=root;Password=***"
+   ```
+
+   A `DevQaSeed` block seeds a `qa@dev.local` login for local testing; it is `Enabled: false` in committed config and only activates inside Development when you set a local password yourself.
+
+3. Apply migrations and run:
+
+   ```bash
+   dotnet run    # https://localhost:5001
+   ```
+
+4. Run the tests:
+
+   ```bash
+   dotnet test Tests/healthspan-api.tests
+   ```
+
+## Key endpoints
+
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /login`, `POST /register`, `POST /refresh`, `GET /auth/google/challenge`, `POST /auth/google/exchange`, `POST /Logout` |
+| Training | `/Workouts`, `/Exercises`, `/ExerciseTypes`, `/Routines`, `/Trainers`, `/Data` (CSV import), `/Sync` (offline mirror) |
+| Health | `/BloodTests` (upload / manual / review / markers / trends), `/GalpinAssessments` (catalog / latest / trends), `/Dashboard/summary`, `/Readiness`, `/Activities` |
+| Billing | `/Billing` (Stripe Checkout sessions + webhook) |
+
+## Layout
+
+| Path | What lives there |
+|---|---|
+| `Controllers/` | REST endpoints |
+| `Offline/` | offline catalogue mirror + cache handler used by the PWA |
+| `Migrations/` | EF Core migrations |
+| `docs/` | design notes and decision records |
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md).
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).

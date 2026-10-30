@@ -6,8 +6,8 @@ POST {{healthspan_api_HostAddress}}/Register
 Content-Type: application/json
 
 {
-  "email": "test@gmail.com",
-  "password": "Pa$$w0rd"
+  "email": "demo@example.com",
+  "password": "DemoPass!2026"
 }
 
 ### POST /Login
@@ -15,6 +15,6 @@ POST {{healthspan_api_HostAddress}}/Login
 Content-Type: application/json
 
 {
-  "email": "test@gmail.com",
-  "password": "Pa$$w0rd"
+  "email": "demo@example.com",
+  "password": "DemoPass!2026"
 }
