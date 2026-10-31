@@ -19,6 +19,18 @@ public sealed class UtcZDateTimeOffsetConverter : JsonConverter<DateTimeOffset>
             value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"));
 }
 
+/// <summary>List-projection variant: the same UTC instant, date-only.</summary>
+public sealed class UtcDateOnlyOffsetConverter : JsonConverter<DateTimeOffset>
+{
+    public override DateTimeOffset Read(
+        ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.GetDateTimeOffset().ToUniversalTime();
+
+    public override void Write(
+        Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value.ToUniversalTime().ToString("yyyy-MM-dd"));
+}
+
 /// <summary>
 /// Inbound payload for POST and PUT /api/activities. Unknown top-level fields
 /// are rejected with 400 instead of being silently dropped (t_0e23bbe6):
@@ -75,6 +87,40 @@ public class WellnessActivityResource
 public class PagedActivitiesResource
 {
     public List<WellnessActivityResource> Items { get; set; } = new();
+    public int Total { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public bool HasMore { get; set; }
+}
+
+/// <summary>
+/// List projection for GET /api/activities?fields=minimal (t_101e2b0a): only
+/// the fields the history list renders (title, dimension badge, param badges,
+/// duration, day grouping) — id, notes, metadata and createdAtUtc are dropped
+/// and the client fetches the full resource on demand (detail sheet, edit).
+/// 100 rows must stay <=15KB; the full shape costs ~29KB.
+/// </summary>
+public class WellnessActivitySummaryResource
+{
+    public Guid Id { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public WellnessDimension Dimension { get; set; }
+    // The list groups rows by day and never renders an hour; shipping the
+    // 12-char date (instead of the 28-char timestamp) is what keeps 100 rows
+    // inside the 15KB budget. Detail/edit refetch the full resource.
+    [JsonConverter(typeof(UtcDateOnlyOffsetConverter))]
+    public DateTimeOffset OccurredOnUtc { get; set; }
+    public int? DurationMinutes { get; set; }
+    public double? FrequencyPerWeek { get; set; }
+    public double? Intensity { get; set; }
+    public double? TemperatureCelsius { get; set; }
+    public int? Cycles { get; set; }
+}
+
+/// <summary>Paged envelope carrying <see cref="WellnessActivitySummaryResource"/> items.</summary>
+public class PagedActivitiesSummaryResource
+{
+    public List<WellnessActivitySummaryResource> Items { get; set; } = new();
     public int Total { get; set; }
     public int Page { get; set; }
     public int PageSize { get; set; }
