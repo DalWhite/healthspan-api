@@ -80,6 +80,29 @@ accounts is never gated.
 
 See [ROADMAP.md](ROADMAP.md).
 
+## Privacy & eligibility
+
+**Whose data does it process?** Only that of the person operating the instance. This is a
+self-hosted, personal-use platform: deployed instances ship with public registration
+closed (`Auth:RegistrationMode=Allowlist`, the fail-safe default), so only the operator's
+allowlisted emails can ever have an account. The operator is the sole data subject.
+
+**Third-party processors are opt-in.** OCR (Azure Document Intelligence), LLM marker
+normalization (OpenRouter) and billing (Stripe) stay disabled unless the operator
+explicitly configures credentials. Uploaded health documents go to the operator's own
+storage (Azure Blob or the local filesystem).
+
+**Nothing sensitive is committed.** No production database, real user data, or live
+secrets are in this repository; seed/sample data (`qa@dev.local`) is synthetic and
+disabled in committed config. Credentials live in user-secrets or environment variables.
+
+**Eligibility.** The project is personally and solely owned by its author (every commit
+is authored by the author, assisted by their own AI tooling) — no employer, client,
+university, or company owns any part of it, and nothing here is under NDA. It is open
+source under GPL-3.0, an OSI-approved license. Because access is restricted to the
+operator's own allowlisted accounts, the project does not process other people's
+personal data.
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE).
