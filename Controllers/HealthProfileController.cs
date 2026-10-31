@@ -63,6 +63,15 @@ public sealed class HealthProfileController(
                 "Date of birth must be between 120 years ago and today.");
         }
 
+        // Ingest validation for the weight time series (spec §2 K2): out-of-range
+        // weights are an explicit 400, never a silent store.
+        if (resource.WeightKg is < 25 or > 400)
+        {
+            return ApiProblemResult.Validation(
+                "weight_kg_invalid",
+                "Weight must be between 25 and 400 kg.");
+        }
+
         try
         {
             var userId =

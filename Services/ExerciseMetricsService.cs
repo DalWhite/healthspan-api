@@ -74,21 +74,23 @@ public class ExerciseMetricsService
         return result;
     }
 
-    private int CalculateRMDiferentialInLast3Months(IEnumerable<Exercise> typeExercises)
+    private int? CalculateRMDiferentialInLast3Months(IEnumerable<Exercise> typeExercises)
     {
         var exercisesInlast3Months = typeExercises
             .Where(e =>
-                e.Workout?.Date >= DateTime.Now.AddMonths(-3)
+                e.Workout?.Date >= DateTime.UtcNow.AddMonths(-3)
                 && HasMaxRepetition(e))
             .ToList();
 
+        if (exercisesInlast3Months.Count < 2)
+        {
+            // Missing data is null, never 0: 0 is reserved for a true plateau
+            // (spec t_358e09e9 §2 K3; old behavior returned 0 for "no data").
+            return null;
+        }
+
         var oldestExercise = exercisesInlast3Months.MinBy(e => e.Workout.Date);
         var newestExercise = exercisesInlast3Months.MaxBy(e => e.Workout.Date);
-
-        if (oldestExercise == null || newestExercise == null)
-        {
-            return 0;
-        }
 
         var currentMax = newestExercise.MaxRepetition!.Value;
         var previousMax = oldestExercise.MaxRepetition!.Value;
@@ -98,7 +100,7 @@ public class ExerciseMetricsService
 
     private int CalculateWeeklyFrequency(IEnumerable<Exercise> typeExercises, int exerciseTypeId)
     {
-        var lastWeek = typeExercises.Where(e => e.Workout.Date >= DateTime.Now.AddDays(-7));
+        var lastWeek = typeExercises.Where(e => e.Workout.Date >= DateTime.UtcNow.AddDays(-7));
         var typeSessions = lastWeek.Count(e => e.TypeId == exerciseTypeId);
         return typeSessions;
     }

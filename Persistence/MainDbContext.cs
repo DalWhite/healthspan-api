@@ -37,6 +37,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     public DbSet<CheckoutSessionRequest> CheckoutSessionRequests { get; set; }
     public DbSet<TrainerPaymentLink> TrainerPaymentLinks { get; set; }
     public DbSet<ImportJobRecord> ImportJobRecords { get; set; }
+    public DbSet<BodyCompositionReading> BodyCompositionReadings { get; set; }
     private CurrentUserProvider _userProvider;
 
     public MainDbContext(DbContextOptions<MainDbContext> options, CurrentUserProvider userProvider)
@@ -57,6 +58,7 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
         builder.Entity<AnalyticsPermission>().HasQueryFilter(permission => permission.OwnerUserId == _userProvider.GetCurrentUserId() || permission.ViewerUserId == _userProvider.GetCurrentUserId());
         builder.Entity<SponsoredEvent>().HasQueryFilter(sponsoredEvent => sponsoredEvent.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<RecommendationDelivery>().HasQueryFilter(delivery => delivery.UserId == _userProvider.GetCurrentUserId());
+        builder.Entity<BodyCompositionReading>().HasQueryFilter(reading => reading.UserId == _userProvider.GetCurrentUserId());
 
         builder.Entity<SponsoredOffer>()
             .Property(offer => offer.Slug)
@@ -283,6 +285,36 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
 
         builder.Entity<BloodTestMarkerResult>()
             .HasIndex(result => new { result.BloodTestId, result.MetricKey });
+
+        // Monthly body-composition series (t_358e09e9 K2). decimal Value keeps
+        // weight exact on write; read paths round to 2-decimal doubles.
+        builder.Entity<BodyCompositionReading>()
+            .HasOne(reading => reading.User)
+            .WithMany()
+            .HasForeignKey(reading => reading.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<BodyCompositionReading>()
+            .HasOne(reading => reading.Metric)
+            .WithMany()
+            .HasForeignKey(reading => reading.HealthMetricDefinitionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<BodyCompositionReading>()
+            .Property(reading => reading.Value)
+            .HasPrecision(10, 2);
+
+        builder.Entity<BodyCompositionReading>()
+            .HasIndex(reading => new
+            {
+                reading.UserId,
+                reading.HealthMetricDefinitionId,
+                reading.OccurredOnUtc
+            });
+
+        builder.Entity<BodyCompositionReading>()
+            .Property(reading => reading.Source)
+            .HasMaxLength(16);
 
         builder.Entity<AnalyticsPermission>()
             .HasOne(permission => permission.OwnerUser)

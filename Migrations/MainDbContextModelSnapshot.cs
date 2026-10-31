@@ -242,6 +242,43 @@ namespace healthspan_api.Migrations
                     b.ToTable("BloodTestMarkerResults");
                 });
 
+            modelBuilder.Entity("BodyCompositionReading", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("HealthMetricDefinitionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("OccurredOnUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HealthMetricDefinitionId");
+
+                    b.HasIndex("UserId", "HealthMetricDefinitionId", "OccurredOnUtc");
+
+                    b.ToTable("BodyCompositionReadings");
+                });
+
             modelBuilder.Entity("CheckoutSessionRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1505,6 +1542,25 @@ namespace healthspan_api.Migrations
                         .IsRequired();
 
                     b.Navigation("BloodTest");
+                });
+
+            modelBuilder.Entity("BodyCompositionReading", b =>
+                {
+                    b.HasOne("HealthMetricDefinition", "Metric")
+                        .WithMany()
+                        .HasForeignKey("HealthMetricDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("CheckoutSessionRequest", b =>
