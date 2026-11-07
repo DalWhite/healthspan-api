@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - 'release/**'
   workflow_dispatch:
 
 jobs:
@@ -65,7 +64,7 @@ jobs:
   deploy:
     runs-on: windows-latest
     needs: build
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     environment:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
