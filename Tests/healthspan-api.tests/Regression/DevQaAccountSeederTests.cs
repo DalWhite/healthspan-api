@@ -31,7 +31,7 @@ public class DevQaAccountSeederTests
     {
         Enabled = true,
         Email = "qa@dev.local",
-        Password = "***REMOVED-QA-SEED-PW***",
+        Password = "Qa-Seed-Test-2026!pw",
     };
 
     [Fact]
@@ -73,7 +73,7 @@ public class DevQaAccountSeederTests
         var user = await db.Users.IgnoreQueryFilters().SingleAsync(u => u.Email == "qa@dev.local");
         user.EmailConfirmed.Should().BeTrue();
 
-        (await userManager.CheckPasswordAsync(user, "***REMOVED-QA-SEED-PW***"))
+        (await userManager.CheckPasswordAsync(user, "Qa-Seed-Test-2026!pw"))
             .Should().BeTrue("the QA account must be usable via POST /login (no Google)");
         (await userManager.CheckPasswordAsync(user, "wrong-password"))
             .Should().BeFalse();
