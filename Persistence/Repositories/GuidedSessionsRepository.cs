@@ -112,7 +112,7 @@ public class GuidedSessionsRepository(MainDbContext context)
         CancellationToken cancellationToken = default)
         => await _context.Workouts
             .IgnoreQueryFilters()
-            .Include(workout => workout.Exercises)
+            .Include(workout => workout.Exercises.Where(exercise => !exercise.IsDeleted))
             .FirstOrDefaultAsync(workout => workout.Id == sessionId, cancellationToken);
 
     /// <summary>
@@ -138,7 +138,7 @@ public class GuidedSessionsRepository(MainDbContext context)
         // Prefer the guided session if several rows share the day (legacy data).
         return await _context.Workouts
             .IgnoreQueryFilters()
-            .Include(workout => workout.Exercises)
+            .Include(workout => workout.Exercises.Where(exercise => !exercise.IsDeleted))
             .Where(workout =>
                 workout.UserId == userId
                 && workout.Date >= dayStart

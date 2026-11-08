@@ -309,6 +309,9 @@ namespace healthspan_api.Migrations
                     b.Property<int?>("Intensity")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<string>("LoadType")
                         .HasColumnType("longtext");
 
