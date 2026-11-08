@@ -11,6 +11,12 @@ public class Workout
     /// Completed-workout queries use this instead of inferring from Exercises.Count.
     /// </summary>
     public DateTime? CompletedAt { get; set; }
+    /// <summary>
+    /// Guided-session snapshot (GuidedSessionSnapshotRecord as JSON), frozen at
+    /// POST /sessions/from-plan. Null means this Workout was not started from a
+    /// plan (manual quick-log / apply-template flows stay untouched).
+    /// </summary>
+    public string GuidedSnapshotJson { get; set; }
     public User User { get; set; }
     public List<Exercise> Exercises { get; set; } = [];
     public List<WorkoutBlock> Blocks { get; set; } = [];

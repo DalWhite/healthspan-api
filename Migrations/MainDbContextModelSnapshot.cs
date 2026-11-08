@@ -1332,6 +1332,9 @@ namespace healthspan_api.Migrations
                     b.Property<string>("Goal")
                         .HasColumnType("longtext");
 
+                    b.Property<string>("GuidedSnapshotJson")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("Modality")
                         .HasColumnType("longtext");
 
