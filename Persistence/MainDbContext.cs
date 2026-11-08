@@ -48,7 +48,9 @@ public class MainDbContext : IdentityDbContext<User, Role, string>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.Entity<Workout>().HasQueryFilter(w => w.User.Id == _userProvider.GetCurrentUserId());
-        builder.Entity<Exercise>().HasQueryFilter(e => e.Workout.User.Id == _userProvider.GetCurrentUserId());
+        // !IsDeleted keeps guided_session undo_set rows out of every read
+        // path (log, metrics, snapshots) without losing history.
+        builder.Entity<Exercise>().HasQueryFilter(e => e.Workout.User.Id == _userProvider.GetCurrentUserId() && !e.IsDeleted);
         builder.Entity<HealthProfile>().HasQueryFilter(profile => profile.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<BloodTest>().HasQueryFilter(test => test.UserId == _userProvider.GetCurrentUserId());
         builder.Entity<BloodTestMarkerResult>().HasQueryFilter(result => result.BloodTest.UserId == _userProvider.GetCurrentUserId());

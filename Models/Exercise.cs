@@ -23,6 +23,13 @@ public class Exercise
     /// </summary>
     public int? SourceTemplateExerciseId { get; set; }
     /// <summary>
+    /// Soft-delete marker for guided_session undo_set: the last materialized
+    /// set of a slot is removed from every read path (log, metrics, session
+    /// snapshot) via the global query filter in MainDbContext, but the row is
+    /// kept so history and audits survive an undo.
+    /// </summary>
+    public bool IsDeleted { get; set; }
+    /// <summary>
     /// Block this exercise belongs to. Null means the implicit Normal block, so
     /// sessions logged before the universal tracker are unchanged.
     /// </summary>

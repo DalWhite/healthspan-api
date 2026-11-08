@@ -18,17 +18,20 @@ public class SyncService
     private readonly CurrentUserProvider _userProvider;
     private readonly ILogger<SyncService> _logger;
     private readonly ExercisesRepository _exercises;
+    private readonly GuidedSessionSetService _guidedSessionSets;
 
     public SyncService(
         MainDbContext context,
         CurrentUserProvider userProvider,
         ILogger<SyncService> logger,
-        ExercisesRepository exercises)
+        ExercisesRepository exercises,
+        GuidedSessionSetService guidedSessionSets)
     {
         _context = context;
         _userProvider = userProvider;
         _logger = logger;
         _exercises = exercises;
+        _guidedSessionSets = guidedSessionSets;
     }
 
     public async Task<SyncResponse> SyncAsync(
@@ -156,6 +159,14 @@ public class SyncService
             ("workout_block", "create") => await CreateBlockAsync(operation, userId, cancellationToken),
             ("workout_block", "update") => await UpdateBlockAsync(operation, userId, cancellationToken),
             ("workout_block", "delete") => await DeleteBlockAsync(operation, userId, cancellationToken),
+            // guided_session taps (offline-first guided MVP): the only
+            // materialization path for session sets. Guards and lineage live in
+            // GuidedSessionSetService; envelope semantics (opId dedup, idMap,
+            // applied/failed counters) are untouched by these two arms.
+            (GuidedSessionSyncActions.Entity, GuidedSessionSyncActions.CompleteSet)
+                => await _guidedSessionSets.CompleteSetAsync(operation, userId, cancellationToken),
+            (GuidedSessionSyncActions.Entity, GuidedSessionSyncActions.UndoSet)
+                => await _guidedSessionSets.UndoSetAsync(operation, userId, cancellationToken),
             _ => (null, $"Unknown entity/action: {operation.Entity}/{operation.Action}")
         };
     }
